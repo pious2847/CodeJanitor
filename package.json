@@ -3,7 +3,7 @@
   "displayName": "CodeJanitor",
   "description": "Safely detect and clean code waste in TypeScript/JavaScript projects",
   "version": "0.1.0",
-  "publisher": "codejanitor",
+  "publisher": "pious2847",
   "engines": {
     "vscode": "^1.85.0"
   },
