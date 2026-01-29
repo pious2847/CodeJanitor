@@ -1,0 +1,132 @@
+{
+  "name": "codejanitor",
+  "displayName": "CodeJanitor",
+  "description": "Safely detect and clean code waste in TypeScript/JavaScript projects",
+  "version": "0.1.0",
+  "publisher": "codejanitor",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Linters",
+    "Programming Languages",
+    "Other"
+  ],
+  "keywords": [
+    "typescript",
+    "javascript",
+    "unused imports",
+    "dead code",
+    "cleanup",
+    "refactoring"
+  ],
+  "activationEvents": [
+    "onLanguage:typescript",
+    "onLanguage:typescriptreact",
+    "onLanguage:javascript",
+    "onLanguage:javascriptreact"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "codejanitor.analyzeFile",
+        "title": "CodeJanitor: Analyze Current File"
+      },
+      {
+        "command": "codejanitor.analyzeWorkspace",
+        "title": "CodeJanitor: Analyze Workspace"
+      },
+      {
+        "command": "codejanitor.showReport",
+        "title": "CodeJanitor: Show Cleanup Report"
+      },
+      {
+        "command": "codejanitor.cleanupWithPreview",
+        "title": "CodeJanitor: Cleanup with Preview"
+      }
+    ],
+    "configuration": {
+      "title": "CodeJanitor",
+      "properties": {
+        "codejanitor.enableUnusedImports": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable detection of unused imports"
+        },
+        "codejanitor.enableUnusedVariables": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable detection of unused variables"
+        },
+        "codejanitor.enableDeadFunctions": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable detection of dead functions"
+        },
+        "codejanitor.enableDeadExports": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable detection of dead exports"
+        },
+        "codejanitor.enableMissingImplementations": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable detection of missing function implementations"
+        },
+        "codejanitor.autoFixOnSave": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically fix HIGH certainty issues on save (only safe fixes)"
+        },
+        "codejanitor.ignorePatterns": {
+          "type": "array",
+          "default": [
+            "**/node_modules/**",
+            "**/dist/**",
+            "**/build/**",
+            "**/*.d.ts"
+          ],
+          "description": "Glob patterns to ignore"
+        },
+        "codejanitor.respectUnderscoreConvention": {
+          "type": "boolean",
+          "default": true,
+          "description": "Ignore variables prefixed with underscore (_)"
+        }
+      }
+    },
+    "menus": {
+      "editor/context": [
+        {
+          "command": "codejanitor.analyzeFile",
+          "group": "codejanitor",
+          "when": "editorLangId =~ /typescript|typescriptreact|javascript|javascriptreact/"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src --ext ts",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@types/vscode": "^1.85.0",
+    "@typescript-eslint/eslint-plugin": "^6.13.0",
+    "@typescript-eslint/parser": "^6.13.0",
+    "eslint": "^8.54.0",
+    "typescript": "^5.3.0",
+    "vitest": "^1.0.0",
+    "@vscode/vsce": "^2.22.0"
+  },
+  "dependencies": {
+    "ts-morph": "^21.0.0"
+  }
+}
