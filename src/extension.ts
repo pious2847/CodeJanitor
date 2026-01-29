@@ -264,10 +264,42 @@ function registerCommands(context: vscode.ExtensionContext): void {
     })
   );
 
+  // Export dry-run report (JSON + HTML)
+  context.subscriptions.push(
+    vscode.commands.registerCommand('codejanitor.exportReport', async () => {
+      if (!workspaceAnalyzer) {
+        vscode.window.showErrorMessage('Workspace analyzer not initialized');
+        return;
+      }
+
+      const folder = vscode.workspace.workspaceFolders?.[0];
+      if (!folder) {
+        vscode.window.showErrorMessage('Open a workspace folder to export report');
+        return;
+      }
+
+      const { exportReport } = await import('./commands/report');
+      try {
+        const result = await exportReport(workspaceAnalyzer, analyzerConfig, folder.uri.fsPath);
+        vscode.window.showInformationMessage(`Report exported: ${result.jsonPath}`);
+      } catch (err) {
+        vscode.window.showErrorMessage('Failed to export report: ' + String(err));
+      }
+    })
+  );
+
   // Cleanup with preview (placeholder)
   context.subscriptions.push(
     vscode.commands.registerCommand('codejanitor.cleanupWithPreview', async () => {
-      vscode.window.showInformationMessage('CodeJanitor Cleanup Preview feature coming soon');
+      // Open the preview panel scaffold
+      try {
+        const panel = (await import('./ui/PreviewPanel')).PreviewPanel;
+        const p = panel.createOrShow(context.extensionUri);
+        // placeholder content
+        p.setContent({ 'example.txt': '<span>+ added line</span>\n<span>- removed line</span>' });
+      } catch (err) {
+        vscode.window.showErrorMessage('Failed to open CodeJanitor preview: ' + String(err));
+      }
     })
   );
 }

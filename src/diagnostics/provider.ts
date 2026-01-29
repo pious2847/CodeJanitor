@@ -21,6 +21,15 @@ function certaintyToDiagnosticSeverity(certainty: CodeIssue['certainty']): vscod
 }
 
 /**
+ * Truncate long explanation strings for diagnostics
+ */
+function truncate(s: string, n: number) {
+  if (!s) return '';
+  if (s.length <= n) return s;
+  return s.slice(0, n - 1) + '…';
+}
+
+/**
  * Diagnostic provider for CodeJanitor
  */
 export class CodeJanitorDiagnosticProvider {
@@ -90,8 +99,16 @@ export class CodeJanitorDiagnosticProvider {
    * Build a user-friendly diagnostic message
    */
   private buildDiagnosticMessage(issue: CodeIssue): string {
-    return issue.reason;
+    // Prepend certainty tag and include a short explanation if available
+    const certaintyTag = issue.certainty ? `[${issue.certainty.toUpperCase()}] ` : '';
+    const explanation = issue.explanation ? `\n\nExplanation: ${truncate(issue.explanation, 240)}` : '';
+    return `${certaintyTag}${issue.reason}${explanation}`;
   }
+
+  /**
+   * Truncate long explanation strings for diagnostics
+   */
+  
 
   /**
    * Update diagnostics for a file

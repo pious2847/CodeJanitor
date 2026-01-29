@@ -129,4 +129,10 @@
   "dependencies": {
     "ts-morph": "^21.0.0"
   }
+  ,
+  "author": "Abdul Hafis Mohammed <https://github.com/pious2847>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pious2847/CodeJanitor"
+  }
 }

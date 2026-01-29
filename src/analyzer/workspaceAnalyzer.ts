@@ -50,6 +50,10 @@ export class WorkspaceAnalyzer {
   private analyzers: IAnalyzer[];
   private importGraph: ImportGraph = {};
   private symbolReferences: Map<string, SymbolReference[]> = new Map();
+  private uncommittedFiles: Set<string> = new Set();
+
+  // optional git metadata cache: filePath -> { hash, author, date }
+  private gitMetadata: Map<string, { hash: string; author: string; date: string }> = new Map();
 
   constructor(project: Project) {
     this.project = project;
@@ -67,6 +71,25 @@ export class WorkspaceAnalyzer {
     // Build symbol and import graphs first
     this.buildSymbolGraphs();
 
+    // If workspace is a git repo, collect uncommitted files and last-commit metadata
+    try {
+      // lazy import to avoid increasing startup cost when not available
+      const { isGitRepository, getUncommittedFiles, getLastCommitInfo } = await import('../git/gitUtils');
+      const rootDirs = this.project.getRootDirectories();
+      const workspaceRoot = rootDirs.length > 0 ? rootDirs[0]!.getPath() : process.cwd();
+      if (await isGitRepository(workspaceRoot)) {
+        this.uncommittedFiles = await getUncommittedFiles(workspaceRoot);
+        // gather commit info for all files
+        for (const sf of this.project.getSourceFiles()) {
+          const fp = sf.getFilePath();
+          const info = await getLastCommitInfo(workspaceRoot, fp);
+          if (info) this.gitMetadata.set(fp, info);
+        }
+      }
+    } catch (err) {
+      // ignore git errors - functionality is best-effort
+    }
+
     const results: FileAnalysisResult[] = [];
     const sourceFiles = this.project.getSourceFiles();
 
@@ -74,6 +97,11 @@ export class WorkspaceAnalyzer {
       // Skip node_modules and declaration files
       const filePath = sourceFile.getFilePath();
       if (filePath.includes('node_modules') || filePath.endsWith('.d.ts')) {
+        continue;
+      }
+
+      // If the file is uncommitted (e.g. working tree changes), skip analysis
+      if (this.uncommittedFiles.has(filePath)) {
         continue;
       }
 
@@ -157,6 +185,11 @@ export class WorkspaceAnalyzer {
         isExport: true,
         isImport: false,
       });
+      // attach git metadata if available
+      const gitInfo = this.gitMetadata.get(filePath);
+      if (gitInfo) {
+        refs.push({ symbol: `__git_meta__${gitInfo.hash}`, filePath, line: 0, column: 0, isDeclaration: false, isExport: false, isImport: false });
+      }
     }
 
     // Get all identifier references
@@ -266,5 +299,59 @@ export class WorkspaceAnalyzer {
    */
   getAnalyzers(): IAnalyzer[] {
     return this.analyzers;
+  }
+
+  /**
+   * Best-effort reference chains for a symbol
+   * Returns arrays of file paths representing a chain from declaration -> (imported-from?) -> usage
+   */
+  getReferenceChains(symbol: string): string[][] {
+    const refs = this.symbolReferences.get(symbol) || [];
+
+    // declaration files (where the symbol is declared/exported)
+    const declFiles = Array.from(new Set(refs.filter(r => r.isDeclaration).map(r => r.filePath)));
+    // usage files (where the symbol appears but not declared)
+    const usageFiles = Array.from(new Set(refs.filter(r => !r.isDeclaration).map(r => r.filePath)));
+
+    const chains: string[][] = [];
+
+    // For each usage, attempt to find import origin and attach declaration
+    for (const usage of usageFiles) {
+      // try to find import entry in usage file that imports this symbol
+      const impEntry = this.importGraph[usage]?.imports.find(i => i.symbol === symbol);
+      if (impEntry) {
+        // attempt to resolve the module source to a workspace file by looking for a declaration with same exported name
+        const possibleOrigins = declFiles.length > 0 ? declFiles : [];
+        if (possibleOrigins.length > 0) {
+          for (const origin of possibleOrigins) {
+            chains.push([origin, usage]);
+          }
+        } else {
+          chains.push([impEntry.source, usage]);
+        }
+      } else {
+        // direct usage in file (maybe same file declaration)
+        if (declFiles.includes(usage)) {
+          chains.push([usage]);
+        } else if (declFiles.length > 0) {
+          for (const d of declFiles) chains.push([d, usage]);
+        } else {
+          chains.push([usage]);
+        }
+      }
+    }
+
+    // If no explicit usages were found but declarations exist, return declarations
+    if (chains.length === 0 && declFiles.length > 0) {
+      for (const d of declFiles) chains.push([d]);
+    }
+
+    // Deduplicate chains
+    const uniq = new Map<string, string[]>();
+    for (const c of chains) {
+      uniq.set(c.join('->'), c);
+    }
+
+    return Array.from(uniq.values());
   }
 }

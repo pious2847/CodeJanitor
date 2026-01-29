@@ -9,6 +9,17 @@ CodeJanitor is a VS Code extension that finds unused imports, dead code, and oth
 - ✅ **Unused Imports Detection** — Safe auto-fix available
 - ✅ **Unused Variables** — Parameters, locals, destructured variables
 - ✅ **Dead Functions** — Functions never called (file or workspace scoped)
+# CodeJanitor
+
+🧹 **Safely detect and clean code waste in TypeScript/JavaScript projects.**
+
+CodeJanitor is a VS Code extension that finds unused imports, dead code, and other code waste with high confidence and **never breaks your code**.
+
+## Features
+
+- ✅ **Unused Imports Detection** — Safe auto-fix available
+- ✅ **Unused Variables** — Parameters, locals, destructured variables
+- ✅ **Dead Functions** — Functions never called (file or workspace scoped)
 - ✅ **Dead Exports** — Exported symbols never imported
 - ✅ **Zero False Positives** — Smart exclusion of framework patterns
 - ✅ **Fully Reversible** — All changes can be undone
@@ -138,6 +149,10 @@ Exclude heavy folders via `ignorePatterns` for faster analysis.
 TBD
 
 ---
+
+**Author:** Abdul Hafis Mohammed — [pious2847](https://github.com/pious2847)
+
+Repository: https://github.com/pious2847/CodeJanitor
 
 **Made with ❤️ for code quality and developer trust.**
 
