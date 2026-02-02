@@ -84,29 +84,49 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 async function initializeWorkspace(): Promise<void> {
   const workspaceFolders = vscode.workspace.workspaceFolders;
   if (!workspaceFolders || workspaceFolders.length === 0) {
-    vscode.window.showWarningMessage('CodeJanitor requires a workspace to be open');
+    console.warn('CodeJanitor requires a workspace to be open');
     return;
   }
 
   try {
     const folder = workspaceFolders[0];
     if (!folder) {
-      vscode.window.showWarningMessage('CodeJanitor requires a workspace to be open');
+      console.warn('CodeJanitor requires a workspace to be open');
       return;
     }
+    
     const workspacePath = folder.uri.fsPath;
-    const tsConfigPath = `${workspacePath}/tsconfig.json`;
-
-    const project = new Project({
-      tsConfigFilePath: tsConfigPath,
-      skipAddingFilesFromTsConfig: false,
-    });
-
-    workspaceAnalyzer = new WorkspaceAnalyzer(project);
-    console.log('CodeJanitor workspace initialized');
+    console.log('CodeJanitor workspace root:', workspacePath);
+    
+    // Try to create project with tsconfig if it exists, otherwise use workspace root
+    try {
+      const project = new Project({
+        tsConfigFilePath: `${workspacePath}/tsconfig.json`,
+        skipAddingFilesFromTsConfig: false,
+      });
+      workspaceAnalyzer = new WorkspaceAnalyzer(project);
+      console.log('CodeJanitor workspace initialized with tsconfig.json');
+    } catch (tsError) {
+      // Fall back to creating project without tsconfig
+      console.warn('tsconfig.json not found, creating project with workspace root:', tsError);
+      const project = new Project({
+        compilerOptions: {
+          target: 99, // Latest
+          module: 99,
+          lib: ['ES2020'],
+          declaration: true,
+        },
+      });
+      
+      // Add source files from workspace
+      const srcPath = `${workspacePath}/src/**/*.{ts,tsx,js,jsx}`;
+      project.addSourceFilesAtPaths(srcPath);
+      
+      workspaceAnalyzer = new WorkspaceAnalyzer(project);
+      console.log('CodeJanitor workspace initialized without tsconfig.json');
+    }
   } catch (error) {
     console.error('Failed to initialize workspace:', error);
-    vscode.window.showErrorMessage(`CodeJanitor initialization failed: ${error}`);
   }
 }
 
