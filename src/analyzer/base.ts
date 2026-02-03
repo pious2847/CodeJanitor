@@ -6,7 +6,16 @@
  */
 
 import { Project, SourceFile } from 'ts-morph';
-import { CodeIssue, FileAnalysisResult, AnalyzerConfig } from '../models';
+import { 
+  CodeIssue, 
+  FileAnalysisResult, 
+  AnalyzerConfig,
+  AnalyzerCategory,
+  AnalyzerPriority,
+  Framework,
+  AnalysisContext,
+  QualityMetrics
+} from '../models';
 
 /**
  * Interface that all analyzers must implement
@@ -20,6 +29,30 @@ export interface IAnalyzer {
   
   /** Analyze a single source file */
   analyzeFile(sourceFile: SourceFile, config: AnalyzerConfig): CodeIssue[];
+}
+
+/**
+ * Extended interface for enterprise analyzers with additional capabilities
+ */
+export interface IEnterpriseAnalyzer extends IAnalyzer {
+  /** Priority for execution order (higher = runs first) */
+  readonly priority: AnalyzerPriority;
+  
+  /** Category for grouping and filtering */
+  readonly category: AnalyzerCategory;
+  
+  /** Frameworks this analyzer supports (empty = all frameworks) */
+  readonly supportedFrameworks: Framework[];
+  
+  /** Analyze with full workspace context */
+  analyzeWithContext(
+    sourceFile: SourceFile,
+    config: AnalyzerConfig,
+    context: AnalysisContext
+  ): Promise<CodeIssue[]>;
+  
+  /** Get quality metrics for a source file */
+  getMetrics(sourceFile: SourceFile): QualityMetrics;
 }
 
 /**
@@ -162,5 +195,106 @@ export function analyzeSourceFile(
       success: false,
       error: error instanceof Error ? error.message : String(error),
     };
+  }
+}
+
+/**
+ * Create a default analysis context for workspace analysis
+ */
+export function createDefaultAnalysisContext(workspacePath: string): AnalysisContext {
+  return {
+    workspaceInfo: {
+      rootPath: workspacePath,
+      frameworks: ['none'],
+      tsConfigPath: undefined,
+      packageInfo: undefined,
+    },
+    gitContext: undefined,
+    dependencyGraph: {
+      dependencies: new Map(),
+      dependents: new Map(),
+      circularDependencies: [],
+    },
+    previousResults: [],
+    teamPolicies: [],
+  };
+}
+
+/**
+ * Create default quality metrics (all zeros)
+ */
+export function createDefaultQualityMetrics(): QualityMetrics {
+  return {
+    complexity: {
+      cyclomaticComplexity: 0,
+      cognitiveComplexity: 0,
+      maxNestingDepth: 0,
+      maxParameters: 0,
+      linesOfCode: 0,
+    },
+    maintainability: {
+      maintainabilityIndex: 100,
+      duplications: 0,
+      commentDensity: 0,
+      avgFunctionLength: 0,
+    },
+    security: {
+      vulnerabilities: 0,
+      secrets: 0,
+      riskScore: 0,
+    },
+    performance: {
+      antiPatterns: 0,
+      impactScore: 0,
+    },
+    testability: {
+      coverage: 0,
+      untestedFunctions: 0,
+      testabilityScore: 100,
+    },
+  };
+}
+
+/**
+ * Base class for enterprise analyzers with default implementations
+ */
+export abstract class BaseEnterpriseAnalyzer implements IEnterpriseAnalyzer {
+  abstract readonly name: string;
+  abstract readonly priority: AnalyzerPriority;
+  abstract readonly category: AnalyzerCategory;
+  readonly supportedFrameworks: Framework[] = []; // Empty = supports all
+  
+  abstract isEnabled(config: AnalyzerConfig): boolean;
+  abstract analyzeFile(sourceFile: SourceFile, config: AnalyzerConfig): CodeIssue[];
+  
+  /**
+   * Default implementation delegates to analyzeFile
+   * Override this for analyzers that need workspace context
+   */
+  async analyzeWithContext(
+    sourceFile: SourceFile,
+    config: AnalyzerConfig,
+    _context: AnalysisContext
+  ): Promise<CodeIssue[]> {
+    return this.analyzeFile(sourceFile, config);
+  }
+  
+  /**
+   * Default implementation returns zero metrics
+   * Override this for analyzers that calculate metrics
+   */
+  getMetrics(_sourceFile: SourceFile): QualityMetrics {
+    return createDefaultQualityMetrics();
+  }
+  
+  /**
+   * Check if this analyzer supports the given framework
+   */
+  supportsFramework(framework: Framework): boolean {
+    // Empty supportedFrameworks means supports all
+    if (this.supportedFrameworks.length === 0) {
+      return true;
+    }
+    return this.supportedFrameworks.includes(framework);
   }
 }

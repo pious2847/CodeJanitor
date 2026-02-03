@@ -16,6 +16,10 @@ import { CodeIssue, AnalyzerConfig, FileAnalysisResult } from '../models';
 import { UnusedImportsAnalyzer } from './unusedImportsAnalyzer';
 import { UnusedVariablesAnalyzer } from './unusedVariablesAnalyzer';
 import { DeadFunctionsAnalyzer } from './deadFunctionsAnalyzer';
+import { circularDependencyAnalyzer } from './circularDependencyAnalyzer';
+import { complexityAnalyzer } from './complexityAnalyzer';
+import { securityAnalyzer } from './securityAnalyzer';
+import { accessibilityAnalyzer } from './accessibilityAnalyzer';
 
 /**
  * Tracks symbol references across the workspace
@@ -61,6 +65,10 @@ export class WorkspaceAnalyzer {
       new UnusedImportsAnalyzer(),
       new UnusedVariablesAnalyzer(),
       new DeadFunctionsAnalyzer(),
+      circularDependencyAnalyzer,
+      complexityAnalyzer,
+      securityAnalyzer,
+      accessibilityAnalyzer,
     ];
   }
 

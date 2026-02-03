@@ -44,6 +44,10 @@
       {
         "command": "codejanitor.cleanupWithPreview",
         "title": "CodeJanitor: Cleanup with Preview"
+      },
+      {
+        "command": "codejanitor.showEnterpriseDashboard",
+        "title": "CodeJanitor: Show Enterprise Dashboard"
       }
     ],
     "configuration": {

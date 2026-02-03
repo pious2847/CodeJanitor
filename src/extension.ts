@@ -142,6 +142,10 @@ function loadConfiguration(): AnalyzerConfig {
     enableDeadFunctions: config.get('enableDeadFunctions', true),
     enableDeadExports: config.get('enableDeadExports', false),
     enableMissingImplementations: config.get('enableMissingImplementations', false),
+    enableCircularDependencies: config.get('enableCircularDependencies', false),
+    enableComplexityAnalysis: config.get('enableComplexityAnalysis', false),
+    enableSecurityAnalysis: config.get('enableSecurityAnalysis', false),
+    enableAccessibilityAnalysis: config.get('enableAccessibilityAnalysis', false),
     autoFixOnSave: config.get('autoFixOnSave', false),
     ignorePatterns: config.get('ignorePatterns', ['node_modules/**', '**/dist/**']),
     respectUnderscoreConvention: config.get('respectUnderscoreConvention', true),
@@ -319,6 +323,33 @@ function registerCommands(context: vscode.ExtensionContext): void {
         p.setContent({ 'example.txt': '<span>+ added line</span>\n<span>- removed line</span>' });
       } catch (err) {
         vscode.window.showErrorMessage('Failed to open CodeJanitor preview: ' + String(err));
+      }
+    })
+  );
+
+  // Show Enterprise Dashboard
+  context.subscriptions.push(
+    vscode.commands.registerCommand('codejanitor.showEnterpriseDashboard', async () => {
+      try {
+        const { EnterpriseDashboard } = await import('./ui/EnterpriseDashboard');
+        const { AnalyticsEngine } = await import('./services/AnalyticsEngine');
+        const { TeamWorkspace } = await import('./services/TeamWorkspace');
+        const { PolicyEngine } = await import('./services/PolicyEngine');
+
+        const analyticsEngine = new AnalyticsEngine();
+        const teamWorkspace = new TeamWorkspace();
+        const policyEngine = new PolicyEngine();
+
+        const dashboard = new EnterpriseDashboard(
+          context.extensionUri,
+          analyticsEngine,
+          teamWorkspace,
+          policyEngine
+        );
+
+        dashboard.show();
+      } catch (err) {
+        vscode.window.showErrorMessage('Failed to open Enterprise Dashboard: ' + String(err));
       }
     })
   );
