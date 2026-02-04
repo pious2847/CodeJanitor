@@ -288,9 +288,9 @@ describe('AuditLogger', () => {
     });
 
     it('should query events by date range', () => {
-      const now = new Date();
-      const future = new Date(now.getTime() + 1000);
-      const events = auditLogger.query({ startDate: now, endDate: future });
+      const past = new Date(Date.now() - 1000);
+      const future = new Date(Date.now() + 1000);
+      const events = auditLogger.query({ startDate: past, endDate: future });
       expect(events).toHaveLength(4);
     });
 

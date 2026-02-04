@@ -582,4 +582,36 @@ export class NotificationSystem {
   private generateId(prefix: string): string {
     return `${prefix}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
   }
+
+  /**
+   * Send exception approval notification
+   * Requirements: 10.4
+   */
+  async sendExceptionApprovalNotification(
+    recipientUserId: string,
+    exceptionId: string,
+    action: 'approved' | 'rejected',
+    comment?: string
+  ): Promise<Notification> {
+    // In a real implementation, fetch user details from user service
+    const recipient: User = {
+      id: recipientUserId,
+      name: 'User',
+      email: `${recipientUserId}@example.com`,
+      role: 'developer',
+    };
+
+    const subject = `Exception ${action === 'approved' ? 'Approved' : 'Rejected'}: ${exceptionId}`;
+    const body = `Your exception request has been ${action}.\n\nException ID: ${exceptionId}${comment ? `\n\nComment: ${comment}` : ''}`;
+
+    return this.sendNotification(
+      'custom',
+      [recipient],
+      subject,
+      body,
+      ['email', 'mobile', 'in_app'],
+      'high',
+      { exceptionId, action }
+    );
+  }
 }
