@@ -117,6 +117,10 @@
     "pretest": "npm run compile",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "vitest run src/__tests__/e2e-integration.test.ts",
+    "test:services": "npm run compile && node out/scripts/test-services.js",
+    "start:api": "npm run compile && node out/scripts/start-api-server.js",
+    "verify": "npm run compile && node out/scripts/verify-setup.js",
     "lint": "eslint src --ext ts",
     "package": "vsce package"
   },

@@ -1,0 +1,13 @@
+{
+  "name": "codejanitor-test-project",
+  "version": "1.0.0",
+  "description": "Sample project for testing CodeJanitor Enterprise",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "test": "echo \"No tests yet\""
+  },
+  "keywords": ["test"],
+  "author": "CodeJanitor",
+  "license": "MIT"
+}

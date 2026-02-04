@@ -242,7 +242,23 @@ function registerCommands(context: vscode.ExtensionContext): void {
       }
 
       await analyzeDocument(editor.document);
-      vscode.window.showInformationMessage('CodeJanitor analysis complete');
+      
+      // Get the issues for this file
+      const diagnostics = diagnosticProvider.getDiagnosticCollection().get(editor.document.uri);
+      const issueCount = diagnostics?.length || 0;
+
+      if (issueCount === 0) {
+        vscode.window.showInformationMessage('✅ No issues found in this file!');
+      } else {
+        const action = await vscode.window.showInformationMessage(
+          `Found ${issueCount} issue${issueCount > 1 ? 's' : ''} in this file`,
+          'View Problems'
+        );
+        
+        if (action === 'View Problems') {
+          vscode.commands.executeCommand('workbench.action.problems.focus');
+        }
+      }
     })
   );
 
@@ -270,9 +286,28 @@ function registerCommands(context: vscode.ExtensionContext): void {
             }
 
             const totalIssues = results.reduce((sum, r) => sum + r.issues.length, 0);
-            vscode.window.showInformationMessage(
-              `CodeJanitor analysis complete: ${totalIssues} issues found in ${results.length} files`
+            const filesWithIssues = results.filter(r => r.issues.length > 0).length;
+            const criticalIssues = results.reduce((sum, r) => 
+              sum + r.issues.filter(i => i.certainty === 'high').length, 0
             );
+
+            if (totalIssues === 0) {
+              vscode.window.showInformationMessage(
+                `✅ Workspace analysis complete: No issues found in ${results.length} files!`
+              );
+            } else {
+              const action = await vscode.window.showInformationMessage(
+                `Found ${totalIssues} issues in ${filesWithIssues}/${results.length} files (${criticalIssues} critical)`,
+                'View Problems',
+                'Show Report'
+              );
+
+              if (action === 'View Problems') {
+                vscode.commands.executeCommand('workbench.action.problems.focus');
+              } else if (action === 'Show Report') {
+                vscode.commands.executeCommand('codejanitor.showReport');
+              }
+            }
           } catch (error) {
             vscode.window.showErrorMessage(`Analysis failed: ${error}`);
           }
@@ -284,7 +319,62 @@ function registerCommands(context: vscode.ExtensionContext): void {
   // Show report (placeholder for future UI)
   context.subscriptions.push(
     vscode.commands.registerCommand('codejanitor.showReport', async () => {
-      vscode.window.showInformationMessage('CodeJanitor Report feature coming soon');
+      if (!workspaceAnalyzer) {
+        vscode.window.showErrorMessage('Workspace analyzer not initialized');
+        return;
+      }
+
+      // Run analysis first
+      await vscode.window.withProgress(
+        {
+          location: vscode.ProgressLocation.Notification,
+          title: 'CodeJanitor: Generating report...',
+          cancellable: false,
+        },
+        async () => {
+          try {
+            const results = await workspaceAnalyzer!.analyzeWorkspace(analyzerConfig);
+            
+            // Update diagnostics
+            for (const result of results) {
+              diagnosticProvider.updateFileDiagnostics(result.filePath, result.issues);
+            }
+
+            // Calculate summary
+            const totalIssues = results.reduce((sum, r) => sum + r.issues.length, 0);
+            const criticalIssues = results.reduce((sum, r) => 
+              sum + r.issues.filter(i => i.certainty === 'high').length, 0
+            );
+            const filesWithIssues = results.filter(r => r.issues.length > 0).length;
+
+            // Show summary in information message
+            const message = `
+📊 CodeJanitor Analysis Report
+
+Total Files Analyzed: ${results.length}
+Files with Issues: ${filesWithIssues}
+Total Issues Found: ${totalIssues}
+Critical Issues: ${criticalIssues}
+
+Check the Problems panel (Ctrl+Shift+M) for details.
+            `.trim();
+
+            const action = await vscode.window.showInformationMessage(
+              message,
+              'Open Problems Panel',
+              'Export Report'
+            );
+
+            if (action === 'Open Problems Panel') {
+              vscode.commands.executeCommand('workbench.action.problems.focus');
+            } else if (action === 'Export Report') {
+              vscode.commands.executeCommand('codejanitor.exportReport');
+            }
+          } catch (error) {
+            vscode.window.showErrorMessage(`Analysis failed: ${error}`);
+          }
+        }
+      );
     })
   );
 
@@ -305,24 +395,43 @@ function registerCommands(context: vscode.ExtensionContext): void {
       const { exportReport } = await import('./commands/report');
       try {
         const result = await exportReport(workspaceAnalyzer, analyzerConfig, folder.uri.fsPath);
-        vscode.window.showInformationMessage(`Report exported: ${result.jsonPath}`);
+        
+        const action = await vscode.window.showInformationMessage(
+          `Report exported successfully!`,
+          'Open HTML Report',
+          'Open JSON Report',
+          'Show in Folder'
+        );
+
+        if (action === 'Open HTML Report') {
+          vscode.env.openExternal(vscode.Uri.file(result.htmlPath));
+        } else if (action === 'Open JSON Report') {
+          const doc = await vscode.workspace.openTextDocument(result.jsonPath);
+          vscode.window.showTextDocument(doc);
+        } else if (action === 'Show in Folder') {
+          vscode.commands.executeCommand('revealFileInOS', vscode.Uri.file(result.jsonPath));
+        }
       } catch (err) {
         vscode.window.showErrorMessage('Failed to export report: ' + String(err));
       }
     })
   );
 
-  // Cleanup with preview (placeholder)
+  // Cleanup with preview
   context.subscriptions.push(
     vscode.commands.registerCommand('codejanitor.cleanupWithPreview', async () => {
-      // Open the preview panel scaffold
-      try {
-        const panel = (await import('./ui/PreviewPanel')).PreviewPanel;
-        const p = panel.createOrShow(context.extensionUri);
-        // placeholder content
-        p.setContent({ 'example.txt': '<span>+ added line</span>\n<span>- removed line</span>' });
-      } catch (err) {
-        vscode.window.showErrorMessage('Failed to open CodeJanitor preview: ' + String(err));
+      const action = await vscode.window.showInformationMessage(
+        'Preview feature is under development. Use the Problems Panel to see issues and apply fixes individually with the lightbulb icon.',
+        'Open Problems Panel',
+        'Learn More'
+      );
+
+      if (action === 'Open Problems Panel') {
+        vscode.commands.executeCommand('workbench.action.problems.focus');
+      } else if (action === 'Learn More') {
+        vscode.window.showInformationMessage(
+          'To fix issues: 1) Open Problems Panel (Ctrl+Shift+M), 2) Click on an issue, 3) Click the lightbulb icon, 4) Select a fix'
+        );
       }
     })
   );

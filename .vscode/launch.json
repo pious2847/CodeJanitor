@@ -1,0 +1,40 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run Extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}",
+        "${workspaceFolder}/test-data/sample-project"
+      ],
+      "outFiles": [
+        "${workspaceFolder}/out/**/*.js"
+      ],
+      "preLaunchTask": "npm: compile"
+    },
+    {
+      "name": "Debug API Server",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/out/scripts/start-api-server.js",
+      "preLaunchTask": "npm: compile",
+      "outFiles": [
+        "${workspaceFolder}/out/**/*.js"
+      ],
+      "console": "integratedTerminal"
+    },
+    {
+      "name": "Debug Service Tests",
+      "type": "node",
+      "request": "launch",
+      "program": "${workspaceFolder}/out/scripts/test-services.js",
+      "preLaunchTask": "npm: compile",
+      "outFiles": [
+        "${workspaceFolder}/out/**/*.js"
+      ],
+      "console": "integratedTerminal"
+    }
+  ]
+}

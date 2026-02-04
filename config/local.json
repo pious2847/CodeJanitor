@@ -1,0 +1,61 @@
+{
+  "api": {
+    "port": 3000,
+    "host": "localhost",
+    "version": "v1",
+    "enableRateLimiting": false,
+    "enableAuthentication": false,
+    "corsOrigins": ["http://localhost:3000", "http://localhost:8080"]
+  },
+  "database": {
+    "type": "memory",
+    "path": "./data/local.db"
+  },
+  "cache": {
+    "enabled": true,
+    "type": "memory",
+    "ttl": 3600,
+    "maxSize": 1000
+  },
+  "analysis": {
+    "maxConcurrency": 4,
+    "timeout": 30000,
+    "enableIncrementalAnalysis": true,
+    "enableCaching": true
+  },
+  "logging": {
+    "level": "debug",
+    "file": "./logs/api-server.log",
+    "console": true
+  },
+  "features": {
+    "enableMLModels": true,
+    "enableRealtimeCollaboration": true,
+    "enableNotifications": true,
+    "enableAuditLogging": true
+  },
+  "notifications": {
+    "email": {
+      "enabled": false,
+      "smtp": {
+        "host": "localhost",
+        "port": 1025,
+        "secure": false
+      }
+    },
+    "slack": {
+      "enabled": false,
+      "webhookUrl": ""
+    },
+    "teams": {
+      "enabled": false,
+      "webhookUrl": ""
+    }
+  },
+  "security": {
+    "enableEncryption": true,
+    "enableRBAC": true,
+    "sessionTimeout": 3600000,
+    "maxLoginAttempts": 5
+  }
+}
