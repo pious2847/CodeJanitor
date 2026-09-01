@@ -228,6 +228,14 @@ async function analyzeDocument(document: vscode.TextDocument): Promise<void> {
  * Register extension commands
  */
 function registerCommands(context: vscode.ExtensionContext): void {
+  registerAnalyzeFileCommand(context);
+  registerAnalyzeWorkspaceCommand(context);
+  registerShowReportCommand(context);
+  registerExportReportCommand(context);
+  registerCleanupWithPreviewCommand(context);
+}
+
+function registerAnalyzeFileCommand(context: vscode.ExtensionContext): void {
   // Analyze current file
   context.subscriptions.push(
     vscode.commands.registerCommand('codejanitor.analyzeFile', async () => {
@@ -241,7 +249,9 @@ function registerCommands(context: vscode.ExtensionContext): void {
       vscode.window.showInformationMessage('CodeJanitor analysis complete');
     })
   );
+}
 
+function registerAnalyzeWorkspaceCommand(context: vscode.ExtensionContext): void {
   // Analyze workspace
   context.subscriptions.push(
     vscode.commands.registerCommand('codejanitor.analyzeWorkspace', async () => {
@@ -276,14 +286,18 @@ function registerCommands(context: vscode.ExtensionContext): void {
       );
     })
   );
+}
 
+function registerShowReportCommand(context: vscode.ExtensionContext): void {
   // Show report (placeholder for future UI)
   context.subscriptions.push(
     vscode.commands.registerCommand('codejanitor.showReport', async () => {
       vscode.window.showInformationMessage('CodeJanitor Report feature coming soon');
     })
   );
+}
 
+function registerExportReportCommand(context: vscode.ExtensionContext): void {
   // Export dry-run report (JSON + HTML)
   context.subscriptions.push(
     vscode.commands.registerCommand('codejanitor.exportReport', async () => {
@@ -307,7 +321,9 @@ function registerCommands(context: vscode.ExtensionContext): void {
       }
     })
   );
+}
 
+function registerCleanupWithPreviewCommand(context: vscode.ExtensionContext): void {
   // Cleanup with preview (placeholder)
   context.subscriptions.push(
     vscode.commands.registerCommand('codejanitor.cleanupWithPreview', async () => {
