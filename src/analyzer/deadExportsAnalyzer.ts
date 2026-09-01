@@ -38,8 +38,7 @@ import { parseCodeJanitorDirectives } from './ignoreDirectives';
  * Entry point patterns that should not be flagged
  */
 const ENTRY_POINT_PATTERNS: RegExp[] = [
-  /^(index|main|lib|types)\.tsx?$/,
-  /^[^/]*\/index\.tsx?$/, // Any index.ts file
+  /(?:^|\/)(index|main|lib|types)\.tsx?$/, // Any index.ts, main.ts, lib.ts, types.ts
 ];
 
 /**
