@@ -79,12 +79,12 @@ export class WorkspaceAnalyzer {
       const workspaceRoot = rootDirs.length > 0 ? rootDirs[0]!.getPath() : process.cwd();
       if (await isGitRepository(workspaceRoot)) {
         this.uncommittedFiles = await getUncommittedFiles(workspaceRoot);
-        // gather commit info for all files
-        for (const sf of this.project.getSourceFiles()) {
+        // gather commit info for all files concurrently
+        await Promise.all(this.project.getSourceFiles().map(async (sf) => {
           const fp = sf.getFilePath();
           const info = await getLastCommitInfo(workspaceRoot, fp);
           if (info) this.gitMetadata.set(fp, info);
-        }
+        }));
       }
     } catch (err) {
       // ignore git errors - functionality is best-effort
