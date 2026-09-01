@@ -10,8 +10,14 @@
  * TypeScript language service to produce precise edits.
  */
 
-import type { Project } from 'ts-morph';
+import type { Project, Node } from 'ts-morph';
 import { SyntaxKind } from 'ts-morph';
+
+export type DeclarationIdentity = { path: string; pos: number };
+
+function hasMatchingDeclaration(decls: Node[], origDecls: DeclarationIdentity[]): boolean {
+  return decls.some(d => origDecls.some(od => od.path === d.getSourceFile().getFilePath() && od.pos === d.getPos()));
+}
 
 export type RenamePreview = {
   filePath: string;
@@ -54,7 +60,7 @@ export async function computeSafeRenamePreview(_project: Project, _filePath: str
         if (!sym) continue;
         const decls = sym.getDeclarations();
         // If any declaration matches an original declaration, consider it the same symbol
-        const matches = decls.some(d => origDecls.some(od => od.path === d.getSourceFile().getFilePath() && od.pos === d.getPos()));
+        const matches = hasMatchingDeclaration(decls, origDecls);
         if (matches) {
           edits.push({ start: id.getStart(), length: id.getEnd() - id.getStart(), newText: newName });
         }
