@@ -67,10 +67,23 @@ export class UnusedVariablesAnalyzer implements IAnalyzer {
     const directives = parseCodeJanitorDirectives(sourceFile);
     if (directives.fileIgnored) return [];
 
+    // Cache identifiers to avoid repeated AST traversal
+    const identifierCache = new Map<string, Node[]>();
+    const identifiers = sourceFile.getDescendantsOfKind(SyntaxKind.Identifier);
+    for (const id of identifiers) {
+      const text = id.getText();
+      const existing = identifierCache.get(text);
+      if (existing) {
+        existing.push(id);
+      } else {
+        identifierCache.set(text, [id]);
+      }
+    }
+
     // Analyze variable declarations
     const variableDeclarations = sourceFile.getVariableDeclarations();
     for (const varDecl of variableDeclarations) {
-      const results = this.analyzeVariableDeclaration(varDecl, sourceFile, config);
+      const results = this.analyzeVariableDeclaration(varDecl, sourceFile, config, identifierCache);
       for (const result of results) {
         if (!result.isUsed && !result.isExported) {
           const issue = this.createIssue(result, sourceFile);
@@ -87,7 +100,7 @@ export class UnusedVariablesAnalyzer implements IAnalyzer {
     for (const func of functions) {
       const params = func.getParameters();
       for (const param of params) {
-        const result = this.analyzeParameter(param, config);
+        const result = this.analyzeParameter(param, config, identifierCache);
         if (result && !result.isUsed) {
           const issue = this.createIssue(result, sourceFile);
           if (!issue) continue;
@@ -104,7 +117,7 @@ export class UnusedVariablesAnalyzer implements IAnalyzer {
       for (const method of cls.getMethods()) {
         const params = method.getParameters();
         for (const param of params) {
-          const result = this.analyzeParameter(param, config);
+          const result = this.analyzeParameter(param, config, identifierCache);
           if (result && !result.isUsed) {
             const issue = this.createIssue(result, sourceFile);
             if (!issue) continue;
@@ -121,7 +134,7 @@ export class UnusedVariablesAnalyzer implements IAnalyzer {
     for (const arrow of arrowFunctions) {
       const params = arrow.getParameters();
       for (const param of params) {
-        const result = this.analyzeParameter(param, config);
+        const result = this.analyzeParameter(param, config, identifierCache);
         if (result && !result.isUsed) {
           const issue = this.createIssue(result, sourceFile);
           if (!issue) continue;
@@ -135,7 +148,7 @@ export class UnusedVariablesAnalyzer implements IAnalyzer {
     // Analyze catch clause parameters
     const catchClauses = sourceFile.getDescendantsOfKind(SyntaxKind.CatchClause);
     for (const catchClause of catchClauses) {
-      const result = this.analyzeCatchClause(catchClause as CatchClause, config);
+      const result = this.analyzeCatchClause(catchClause as CatchClause, config, identifierCache);
       if (result && !result.isUsed) {
         const issue = this.createIssue(result, sourceFile);
         if (!issue) continue;
@@ -154,7 +167,8 @@ export class UnusedVariablesAnalyzer implements IAnalyzer {
   private analyzeVariableDeclaration(
     varDecl: VariableDeclaration,
     sourceFile: SourceFile,
-    config: AnalyzerConfig
+    config: AnalyzerConfig,
+    identifierCache: Map<string, Node[]>
   ): VariableAnalysisResult[] {
     const results: VariableAnalysisResult[] = [];
     const nameNode = varDecl.getNameNode();
@@ -175,7 +189,7 @@ export class UnusedVariablesAnalyzer implements IAnalyzer {
         name,
         kind: 'variable',
         node: varDecl,
-        isUsed: this.isVariableUsed(name, varDecl, sourceFile),
+        isUsed: this.isVariableUsed(name, varDecl, identifierCache),
         isExported,
       });
     }
@@ -184,7 +198,7 @@ export class UnusedVariablesAnalyzer implements IAnalyzer {
       const bindings = nameNode.getElements();
       for (const binding of bindings) {
         if (Node.isBindingElement(binding)) {
-          const bindingResults = this.analyzeBindingElement(binding, sourceFile, config, isExported);
+          const bindingResults = this.analyzeBindingElement(binding, sourceFile, config, isExported, identifierCache);
           results.push(...bindingResults);
         }
       }
@@ -200,7 +214,8 @@ export class UnusedVariablesAnalyzer implements IAnalyzer {
     binding: BindingElement,
     sourceFile: SourceFile,
     config: AnalyzerConfig,
-    isExported: boolean
+    isExported: boolean,
+    identifierCache: Map<string, Node[]>
   ): VariableAnalysisResult[] {
     const results: VariableAnalysisResult[] = [];
     const nameNode = binding.getNameNode();
@@ -216,7 +231,7 @@ export class UnusedVariablesAnalyzer implements IAnalyzer {
         name,
         kind: 'destructured',
         node: binding,
-        isUsed: this.isVariableUsed(name, binding, sourceFile),
+        isUsed: this.isVariableUsed(name, binding, identifierCache),
         isExported,
       });
     }
@@ -225,7 +240,7 @@ export class UnusedVariablesAnalyzer implements IAnalyzer {
       const nestedBindings = nameNode.getElements();
       for (const nested of nestedBindings) {
         if (Node.isBindingElement(nested)) {
-          results.push(...this.analyzeBindingElement(nested, sourceFile, config, isExported));
+          results.push(...this.analyzeBindingElement(nested, sourceFile, config, isExported, identifierCache));
         }
       }
     }
@@ -238,7 +253,8 @@ export class UnusedVariablesAnalyzer implements IAnalyzer {
    */
   private analyzeParameter(
     param: ParameterDeclaration,
-    config: AnalyzerConfig
+    config: AnalyzerConfig,
+    identifierCache: Map<string, Node[]>
   ): VariableAnalysisResult | null {
     const nameNode = param.getNameNode();
 
@@ -260,7 +276,7 @@ export class UnusedVariablesAnalyzer implements IAnalyzer {
         name,
         kind: 'parameter',
         node: param,
-        isUsed: this.isParameterUsed(name, param),
+        isUsed: this.isParameterUsed(name, param, identifierCache),
         isExported: false,
       };
     }
@@ -273,7 +289,8 @@ export class UnusedVariablesAnalyzer implements IAnalyzer {
    */
   private analyzeCatchClause(
     catchClause: CatchClause,
-    config: AnalyzerConfig
+    config: AnalyzerConfig,
+    identifierCache: Map<string, Node[]>
   ): VariableAnalysisResult | null {
     const variableDecl = catchClause.getVariableDeclaration();
     if (!variableDecl) {
@@ -289,7 +306,7 @@ export class UnusedVariablesAnalyzer implements IAnalyzer {
 
     // Get the catch block
     const block = catchClause.getBlock();
-    const isUsed = this.isIdentifierUsedInScope(name, block, variableDecl);
+    const isUsed = this.isIdentifierUsedInScope(name, block, variableDecl, identifierCache);
 
     return {
       name,
@@ -306,10 +323,9 @@ export class UnusedVariablesAnalyzer implements IAnalyzer {
   private isVariableUsed(
     name: string,
     declarationNode: Node,
-    sourceFile: SourceFile
+    identifierCache: Map<string, Node[]>
   ): boolean {
-    const identifiers = sourceFile.getDescendantsOfKind(SyntaxKind.Identifier)
-      .filter((id: Node) => id.getText() === name);
+    const identifiers = identifierCache.get(name) || [];
 
     for (const identifier of identifiers) {
       // Skip the declaration itself
@@ -337,7 +353,8 @@ export class UnusedVariablesAnalyzer implements IAnalyzer {
 
   private isParameterUsed(
     name: string,
-    param: ParameterDeclaration
+    param: ParameterDeclaration,
+    identifierCache: Map<string, Node[]>
   ): boolean {
     // Get the function body
     const funcLike = param.getParent();
@@ -357,7 +374,7 @@ export class UnusedVariablesAnalyzer implements IAnalyzer {
       return true; // Assume used if no body (e.g., abstract method)
     }
 
-    return this.isIdentifierUsedInScope(name, body, param);
+    return this.isIdentifierUsedInScope(name, body, param, identifierCache);
   }
 
   /**
@@ -366,10 +383,12 @@ export class UnusedVariablesAnalyzer implements IAnalyzer {
   private isIdentifierUsedInScope(
     name: string,
     scope: Node,
-    declarationNode: Node
+    declarationNode: Node,
+    identifierCache: Map<string, Node[]>
   ): boolean {
-    const identifiers = scope.getDescendantsOfKind(SyntaxKind.Identifier)
-      .filter((id: Node) => id.getText() === name);
+    const cachedIdentifiers = identifierCache.get(name) || [];
+    // We only care about identifiers that are inside the 'scope'
+    const identifiers = cachedIdentifiers.filter(id => this.isSameOrChildOf(id, scope));
 
     for (const identifier of identifiers) {
       if (!this.isSameOrChildOf(identifier, declarationNode)) {
