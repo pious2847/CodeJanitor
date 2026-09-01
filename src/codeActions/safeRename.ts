@@ -37,7 +37,10 @@ export async function computeSafeRenamePreview(_project: Project, _filePath: str
     if (!origSymbol) return { success: false, error: 'Unable to resolve symbol for identifier' };
 
     // Build a set of declaration identity keys for the original symbol
-    const origDecls = origSymbol.getDeclarations().map(d => ({ path: d.getSourceFile().getFilePath(), pos: d.getPos() }));
+    const origDecls = origSymbol.getDeclarations().map(d => ({
+      path: d.getSourceFile().getFilePath(),
+      pos: d.getPos()
+    }));
 
     const previews: RenamePreview[] = [];
 
