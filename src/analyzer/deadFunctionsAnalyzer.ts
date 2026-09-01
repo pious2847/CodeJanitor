@@ -26,6 +26,7 @@ import {
   Node,
   SyntaxKind,
   ClassDeclaration,
+  PropertyAccessExpression,
 } from 'ts-morph';
 import { IAnalyzer } from './base';
 import {
@@ -80,6 +81,37 @@ export class DeadFunctionsAnalyzer implements IAnalyzer {
    * Optional workspace context for more accurate analysis
    */
   private externalReferenceChecker: ExternalReferenceChecker | null = null;
+
+  /**
+   * Cache to store identifiers and property accesses per file for faster lookup
+   */
+  private fileCache = new WeakMap<SourceFile, {
+    identifiers: Map<string, Node[]>;
+    propertyAccesses: Map<string, PropertyAccessExpression[]>;
+  }>();
+
+  private getFileCache(sourceFile: SourceFile) {
+    if (!this.fileCache.has(sourceFile)) {
+      const identifiers = new Map<string, Node[]>();
+      for (const id of sourceFile.getDescendantsOfKind(SyntaxKind.Identifier)) {
+        const text = id.getText();
+        const list = identifiers.get(text) || [];
+        list.push(id);
+        identifiers.set(text, list);
+      }
+
+      const propertyAccesses = new Map<string, PropertyAccessExpression[]>();
+      for (const access of sourceFile.getDescendantsOfKind(SyntaxKind.PropertyAccessExpression)) {
+        const name = access.getName();
+        const list = propertyAccesses.get(name) || [];
+        list.push(access);
+        propertyAccesses.set(name, list);
+      }
+
+      this.fileCache.set(sourceFile, { identifiers, propertyAccesses });
+    }
+    return this.fileCache.get(sourceFile)!;
+  }
 
   isEnabled(config: AnalyzerConfig): boolean {
     return config.enableDeadFunctions;
@@ -259,8 +291,8 @@ export class DeadFunctionsAnalyzer implements IAnalyzer {
     funcDecl: FunctionDeclaration,
     sourceFile: SourceFile
   ): boolean {
-    const identifiers = sourceFile.getDescendantsOfKind(SyntaxKind.Identifier)
-      .filter((id: Node) => id.getText() === name);
+    const cache = this.getFileCache(sourceFile);
+    const identifiers = cache.identifiers.get(name) || [];
 
     for (const identifier of identifiers) {
       // Skip the function declaration name itself
@@ -283,20 +315,17 @@ export class DeadFunctionsAnalyzer implements IAnalyzer {
     _method: MethodDeclaration,
     sourceFile: SourceFile
   ): boolean {
-    // Look for property access expressions like `this.methodName` or `obj.methodName`
-    const propertyAccesses = sourceFile.getDescendantsOfKind(SyntaxKind.PropertyAccessExpression);
+    const cache = this.getFileCache(sourceFile);
+    const propertyAccesses = cache.propertyAccesses.get(name) || [];
     
     for (const access of propertyAccesses) {
-      const propName = access.getName();
-      if (propName === name) {
-        // Check if this is a call expression (method is being called)
-        const parent = access.getParent();
-        if (Node.isCallExpression(parent)) {
-          return true;
-        }
-        // Also count references (passing method as callback)
+      // Check if this is a call expression (method is being called)
+      const parent = access.getParent();
+      if (Node.isCallExpression(parent)) {
         return true;
       }
+      // Also count references (passing method as callback)
+      return true;
     }
 
     return false;
@@ -315,14 +344,13 @@ export class DeadFunctionsAnalyzer implements IAnalyzer {
       return true; // Assume used if anonymous class
     }
 
-    // Look for ClassName.methodName patterns
-    const propertyAccesses = sourceFile.getDescendantsOfKind(SyntaxKind.PropertyAccessExpression);
+    const cache = this.getFileCache(sourceFile);
+    const propertyAccesses = cache.propertyAccesses.get(name) || [];
     
     for (const access of propertyAccesses) {
       const expression = access.getExpression();
-      const propName = access.getName();
       
-      if (propName === name && Node.isIdentifier(expression) && expression.getText() === className) {
+      if (Node.isIdentifier(expression) && expression.getText() === className) {
         return true;
       }
     }
