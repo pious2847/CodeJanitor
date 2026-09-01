@@ -62,90 +62,86 @@ export class UnusedVariablesAnalyzer implements IAnalyzer {
     return config.enableUnusedVariables;
   }
 
+  private addIssueIfValid(
+    result: VariableAnalysisResult | null,
+    sourceFile: SourceFile,
+    directives: ReturnType<typeof parseCodeJanitorDirectives>,
+    issues: CodeIssue[]
+  ) {
+    if (result && !result.isUsed && !result.isExported) {
+      const issue = this.createIssue(result, sourceFile);
+      if (!issue) return;
+      const loc = issue.locations[0];
+      if (loc && directives.isLineIgnored(loc.startLine, issue.type)) return;
+      issues.push(issue);
+    }
+  }
+
   analyzeFile(sourceFile: SourceFile, config: AnalyzerConfig): CodeIssue[] {
     const issues: CodeIssue[] = [];
     const directives = parseCodeJanitorDirectives(sourceFile);
     if (directives.fileIgnored) return [];
 
-    // Analyze variable declarations
+    this.analyzeVariableDeclarations(sourceFile, config, directives, issues);
+    this.analyzeFunctionParameters(sourceFile, config, directives, issues);
+    this.analyzeMethodParameters(sourceFile, config, directives, issues);
+    this.analyzeArrowFunctionParameters(sourceFile, config, directives, issues);
+    this.analyzeCatchClauses(sourceFile, config, directives, issues);
+
+    return issues;
+  }
+
+  private analyzeVariableDeclarations(sourceFile: SourceFile, config: AnalyzerConfig, directives: ReturnType<typeof parseCodeJanitorDirectives>, issues: CodeIssue[]) {
     const variableDeclarations = sourceFile.getVariableDeclarations();
     for (const varDecl of variableDeclarations) {
       const results = this.analyzeVariableDeclaration(varDecl, sourceFile, config);
       for (const result of results) {
-        if (!result.isUsed && !result.isExported) {
-          const issue = this.createIssue(result, sourceFile);
-          if (!issue) continue;
-          const loc = issue.locations[0];
-          if (loc && directives.isLineIgnored(loc.startLine, issue.type)) continue;
-          issues.push(issue);
-        }
+        this.addIssueIfValid(result, sourceFile, directives, issues);
       }
     }
+  }
 
-    // Analyze function parameters
+  private analyzeFunctionParameters(sourceFile: SourceFile, config: AnalyzerConfig, directives: ReturnType<typeof parseCodeJanitorDirectives>, issues: CodeIssue[]) {
     const functions = sourceFile.getFunctions();
     for (const func of functions) {
       const params = func.getParameters();
       for (const param of params) {
         const result = this.analyzeParameter(param, config);
-        if (result && !result.isUsed) {
-          const issue = this.createIssue(result, sourceFile);
-          if (!issue) continue;
-          const loc = issue.locations[0];
-          if (loc && directives.isLineIgnored(loc.startLine, issue.type)) continue;
-          issues.push(issue);
-        }
+        this.addIssueIfValid(result, sourceFile, directives, issues);
       }
     }
+  }
 
-    // Analyze method parameters
+  private analyzeMethodParameters(sourceFile: SourceFile, config: AnalyzerConfig, directives: ReturnType<typeof parseCodeJanitorDirectives>, issues: CodeIssue[]) {
     const classes = sourceFile.getClasses();
     for (const cls of classes) {
       for (const method of cls.getMethods()) {
         const params = method.getParameters();
         for (const param of params) {
           const result = this.analyzeParameter(param, config);
-          if (result && !result.isUsed) {
-            const issue = this.createIssue(result, sourceFile);
-            if (!issue) continue;
-            const loc = issue.locations[0];
-            if (loc && directives.isLineIgnored(loc.startLine, issue.type)) continue;
-            issues.push(issue);
-          }
+          this.addIssueIfValid(result, sourceFile, directives, issues);
         }
       }
     }
+  }
 
-    // Analyze arrow functions and function expressions
+  private analyzeArrowFunctionParameters(sourceFile: SourceFile, config: AnalyzerConfig, directives: ReturnType<typeof parseCodeJanitorDirectives>, issues: CodeIssue[]) {
     const arrowFunctions = sourceFile.getDescendantsOfKind(SyntaxKind.ArrowFunction);
     for (const arrow of arrowFunctions) {
       const params = arrow.getParameters();
       for (const param of params) {
         const result = this.analyzeParameter(param, config);
-        if (result && !result.isUsed) {
-          const issue = this.createIssue(result, sourceFile);
-          if (!issue) continue;
-          const loc = issue.locations[0];
-          if (loc && directives.isLineIgnored(loc.startLine, issue.type)) continue;
-          issues.push(issue);
-        }
+        this.addIssueIfValid(result, sourceFile, directives, issues);
       }
     }
+  }
 
-    // Analyze catch clause parameters
+  private analyzeCatchClauses(sourceFile: SourceFile, config: AnalyzerConfig, directives: ReturnType<typeof parseCodeJanitorDirectives>, issues: CodeIssue[]) {
     const catchClauses = sourceFile.getDescendantsOfKind(SyntaxKind.CatchClause);
     for (const catchClause of catchClauses) {
       const result = this.analyzeCatchClause(catchClause as CatchClause, config);
-      if (result && !result.isUsed) {
-        const issue = this.createIssue(result, sourceFile);
-        if (!issue) continue;
-        const loc = issue.locations[0];
-        if (loc && directives.isLineIgnored(loc.startLine, issue.type)) continue;
-        issues.push(issue);
-      }
+      this.addIssueIfValid(result, sourceFile, directives, issues);
     }
-
-    return issues;
   }
 
   /**
