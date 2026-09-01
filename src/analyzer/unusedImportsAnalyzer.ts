@@ -60,13 +60,23 @@ export class UnusedImportsAnalyzer implements IAnalyzer {
     if (directives.fileIgnored) return [];
     const imports = sourceFile.getImportDeclarations();
 
+    // Extract all identifiers once to avoid repeated O(N) traversals
+    const identifierMap = new Map<string, Node[]>();
+    const allIdentifiers = sourceFile.getDescendantsOfKind(SyntaxKind.Identifier);
+    for (const id of allIdentifiers) {
+      const text = id.getText();
+      const existing = identifierMap.get(text) || [];
+      existing.push(id);
+      identifierMap.set(text, existing);
+    }
+
     for (const importDecl of imports) {
       // Skip side-effect imports (import 'module')
       if (this.isSideEffectImport(importDecl)) {
         continue;
       }
 
-      const unusedImports = this.analyzeImportDeclaration(importDecl, sourceFile);
+      const unusedImports = this.analyzeImportDeclaration(importDecl, sourceFile, identifierMap);
       
       for (const unused of unusedImports) {
         const issue = this.createIssue(unused, sourceFile, importDecl);
@@ -97,7 +107,8 @@ export class UnusedImportsAnalyzer implements IAnalyzer {
    */
   private analyzeImportDeclaration(
     importDecl: ImportDeclaration,
-    sourceFile: SourceFile
+    sourceFile: SourceFile,
+    identifierMap: Map<string, Node[]>
   ): ImportAnalysisResult[] {
     const unused: ImportAnalysisResult[] = [];
     const isTypeOnlyImport = importDecl.isTypeOnly();
@@ -106,7 +117,7 @@ export class UnusedImportsAnalyzer implements IAnalyzer {
     const defaultImport = importDecl.getDefaultImport();
     if (defaultImport) {
       const name = defaultImport.getText();
-      if (!this.isIdentifierUsed(name, sourceFile, defaultImport)) {
+      if (!this.isIdentifierUsed(name, sourceFile, defaultImport, identifierMap)) {
         unused.push({
           name,
           isUsed: false,
@@ -120,7 +131,7 @@ export class UnusedImportsAnalyzer implements IAnalyzer {
     const namespaceImport = importDecl.getNamespaceImport();
     if (namespaceImport) {
       const name = namespaceImport.getText();
-      if (!this.isIdentifierUsed(name, sourceFile, namespaceImport)) {
+      if (!this.isIdentifierUsed(name, sourceFile, namespaceImport, identifierMap)) {
         unused.push({
           name,
           isUsed: false,
@@ -133,7 +144,7 @@ export class UnusedImportsAnalyzer implements IAnalyzer {
     // Check named imports
     const namedImports = importDecl.getNamedImports();
     for (const namedImport of namedImports) {
-      const result = this.analyzeNamedImport(namedImport, sourceFile, isTypeOnlyImport);
+      const result = this.analyzeNamedImport(namedImport, sourceFile, isTypeOnlyImport, identifierMap);
       if (!result.isUsed) {
         unused.push(result);
       }
@@ -148,7 +159,8 @@ export class UnusedImportsAnalyzer implements IAnalyzer {
   private analyzeNamedImport(
     namedImport: ImportSpecifier,
     sourceFile: SourceFile,
-    parentIsTypeOnly: boolean
+    parentIsTypeOnly: boolean,
+    identifierMap: Map<string, Node[]>
   ): ImportAnalysisResult {
     // Handle aliased imports: import { foo as bar }
     const alias = namedImport.getAliasNode();
@@ -157,7 +169,7 @@ export class UnusedImportsAnalyzer implements IAnalyzer {
 
     return {
       name: localName,
-      isUsed: this.isIdentifierUsed(localName, sourceFile, namedImport),
+      isUsed: this.isIdentifierUsed(localName, sourceFile, namedImport, identifierMap),
       node: namedImport,
       isTypeOnly,
     };
@@ -174,12 +186,12 @@ export class UnusedImportsAnalyzer implements IAnalyzer {
    */
   private isIdentifierUsed(
     name: string,
-    sourceFile: SourceFile,
-    _importNode: Node
+    _sourceFile: SourceFile,
+    _importNode: Node,
+    identifierMap: Map<string, Node[]>
   ): boolean {
     // Get all identifiers in the file with this name
-    const identifiers = sourceFile.getDescendantsOfKind(SyntaxKind.Identifier)
-      .filter((id: Node) => id.getText() === name);
+    const identifiers = identifierMap.get(name) || [];
 
     // Filter out the import declaration itself
     for (const identifier of identifiers) {
