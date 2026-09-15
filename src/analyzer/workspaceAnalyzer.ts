@@ -309,7 +309,8 @@ export class WorkspaceAnalyzer {
     const refs = this.symbolReferences.get(symbol) || [];
 
     // declaration files (where the symbol is declared/exported)
-    const declFiles = Array.from(new Set(refs.filter(r => r.isDeclaration).map(r => r.filePath)));
+    const declFilesSet = new Set(refs.filter(r => r.isDeclaration).map(r => r.filePath));
+    const declFiles = Array.from(declFilesSet);
     // usage files (where the symbol appears but not declared)
     const usageFiles = Array.from(new Set(refs.filter(r => !r.isDeclaration).map(r => r.filePath)));
 
@@ -331,7 +332,7 @@ export class WorkspaceAnalyzer {
         }
       } else {
         // direct usage in file (maybe same file declaration)
-        if (declFiles.includes(usage)) {
+        if (declFilesSet.has(usage)) {
           chains.push([usage]);
         } else if (declFiles.length > 0) {
           for (const d of declFiles) chains.push([d, usage]);
