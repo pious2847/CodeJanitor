@@ -211,10 +211,6 @@ async function analyzeDocument(document: vscode.TextDocument): Promise<void> {
 
     if (result.success) {
       diagnosticProvider.updateFileDiagnostics(filePath, result.issues);
-      
-      if (result.issues.length > 0) {
-        console.log(`CodeJanitor found ${result.issues.length} issues in ${filePath}`);
-      }
     } else {
       console.error(`Analysis failed for ${filePath}: ${result.error}`);
       diagnosticProvider.clearFileDiagnostics(filePath);
