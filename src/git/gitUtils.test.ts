@@ -1,10 +1,72 @@
-import { describe, it, expect } from 'vitest';
-import { getLastCommitInfo } from './gitUtils';
+import { describe, it, expect, vi, afterEach } from 'vitest';
+import { getLastCommitInfo, getUncommittedFiles } from './gitUtils';
 import * as path from 'path';
 import * as fs from 'fs';
 import { execSync } from 'child_process';
+import * as cp from 'child_process';
+
+vi.mock('child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('child_process')>();
+  const execMock = vi.fn();
+  // `util.promisify` relies on a custom symbol for `exec`, so we must mock the promisified version directly
+  (execMock as any)[Symbol.for('nodejs.util.promisify.custom')] = vi.fn();
+  return {
+    ...actual,
+    exec: execMock,
+  };
+});
 
 describe('gitUtils', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  describe('getUncommittedFiles', () => {
+    it('should parse simple uncommitted files correctly', async () => {
+      ((cp.exec as any)[Symbol.for('nodejs.util.promisify.custom')] as ReturnType<typeof vi.fn>).mockResolvedValue({
+        stdout: ' M src/index.ts\0?? src/newFile.ts\0',
+        stderr: ''
+      });
+
+      const workspaceRoot = '/test/root';
+      const files = await getUncommittedFiles(workspaceRoot);
+
+      expect(files.size).toBe(2);
+      expect(files.has(path.resolve(workspaceRoot, 'src/index.ts'))).toBe(true);
+      expect(files.has(path.resolve(workspaceRoot, 'src/newFile.ts'))).toBe(true);
+    });
+
+    it('should parse renamed files correctly', async () => {
+      // The implementation actually splits by NUL and expects the parsed format to work with `->`
+      ((cp.exec as any)[Symbol.for('nodejs.util.promisify.custom')] as ReturnType<typeof vi.fn>).mockResolvedValue({
+        stdout: 'R  src/old.ts -> src/renamed.ts\0 M src/modified.ts\0',
+        stderr: ''
+      });
+
+      const workspaceRoot = '/test/root';
+      const files = await getUncommittedFiles(workspaceRoot);
+
+      expect(files.size).toBe(2);
+      expect(files.has(path.resolve(workspaceRoot, 'src/renamed.ts'))).toBe(true);
+      expect(files.has(path.resolve(workspaceRoot, 'src/modified.ts'))).toBe(true);
+    });
+
+    it('should return empty set if no output', async () => {
+      ((cp.exec as any)[Symbol.for('nodejs.util.promisify.custom')] as ReturnType<typeof vi.fn>).mockResolvedValue({
+        stdout: '',
+        stderr: ''
+      });
+      const files = await getUncommittedFiles('/test/root');
+      expect(files.size).toBe(0);
+    });
+
+    it('should handle errors gracefully', async () => {
+      ((cp.exec as any)[Symbol.for('nodejs.util.promisify.custom')] as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('git command failed'));
+      const files = await getUncommittedFiles('/test/root');
+      expect(files.size).toBe(0);
+    });
+  });
+
   describe('getLastCommitInfo', () => {
     it('should not allow command injection through malicious file paths', async () => {
       // Setup a temporary workspace
