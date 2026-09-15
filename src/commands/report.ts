@@ -63,7 +63,7 @@ function buildHtmlReport(report: any) {
   </html>`;
 }
 
-function escape(s: string) {
+export function escape(s: string) {
   return String(s)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
