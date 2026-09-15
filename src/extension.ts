@@ -105,7 +105,6 @@ async function initializeWorkspace(): Promise<void> {
         skipAddingFilesFromTsConfig: false,
       });
       workspaceAnalyzer = new WorkspaceAnalyzer(project);
-      console.log('CodeJanitor workspace initialized with tsconfig.json');
     } catch (tsError) {
       // Fall back to creating project without tsconfig
       console.warn('tsconfig.json not found, creating project with workspace root:', tsError);
