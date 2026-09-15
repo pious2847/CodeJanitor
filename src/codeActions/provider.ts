@@ -13,6 +13,11 @@ import { CodeJanitorDiagnosticProvider } from '../diagnostics/provider';
  * Code actions provider for CodeJanitor
  */
 export class CodeJanitorCodeActionsProvider implements vscode.CodeActionProvider {
+  public static readonly providedCodeActionKinds = [
+    vscode.CodeActionKind.QuickFix,
+    vscode.CodeActionKind.RefactorRewrite
+  ];
+
   /**
    * Provide code actions for a diagnostic
    */
