@@ -123,7 +123,6 @@ async function initializeWorkspace(): Promise<void> {
       project.addSourceFilesAtPaths(srcPath);
       
       workspaceAnalyzer = new WorkspaceAnalyzer(project);
-      console.log('CodeJanitor workspace initialized without tsconfig.json');
     }
   } catch (error) {
     console.error('Failed to initialize workspace:', error);
