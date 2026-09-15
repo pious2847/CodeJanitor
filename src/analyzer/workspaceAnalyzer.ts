@@ -308,10 +308,21 @@ export class WorkspaceAnalyzer {
   getReferenceChains(symbol: string): string[][] {
     const refs = this.symbolReferences.get(symbol) || [];
 
+    const declFilesSet = new Set<string>();
+    const usageFilesSet = new Set<string>();
+
+    for (const r of refs) {
+      if (r.isDeclaration) {
+        declFilesSet.add(r.filePath);
+      } else {
+        usageFilesSet.add(r.filePath);
+      }
+    }
+
     // declaration files (where the symbol is declared/exported)
-    const declFiles = Array.from(new Set(refs.filter(r => r.isDeclaration).map(r => r.filePath)));
+    const declFiles = Array.from(declFilesSet);
     // usage files (where the symbol appears but not declared)
-    const usageFiles = Array.from(new Set(refs.filter(r => !r.isDeclaration).map(r => r.filePath)));
+    const usageFiles = Array.from(usageFilesSet);
 
     const chains: string[][] = [];
 
