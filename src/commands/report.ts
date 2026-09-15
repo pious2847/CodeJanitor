@@ -33,7 +33,7 @@ export async function exportReport(workspaceAnalyzer: WorkspaceAnalyzer, config:
   return { jsonPath, htmlPath };
 }
 
-function buildHtmlReport(report: any) {
+export function buildHtmlReport(report: any) {
   const rows = report.results
     .map((r: FileAnalysisResult) => {
       const issuesHtml = r.issues
