@@ -35,10 +35,10 @@ interface SymbolReference {
  */
 interface ImportGraph {
   [sourceFile: string]: {
-    imports: {
+    imports: Map<string, {
       symbol: string;
       source: string;
-    }[];
+    }>;
   };
 }
 
@@ -224,7 +224,7 @@ export class WorkspaceAnalyzer {
     const imports = sourceFile.getImportDeclarations();
 
     if (!this.importGraph[filePath]) {
-      this.importGraph[filePath] = { imports: [] };
+      this.importGraph[filePath] = { imports: new Map() };
     }
 
     for (const importDecl of imports) {
@@ -236,7 +236,7 @@ export class WorkspaceAnalyzer {
       // Get default import
       const defaultImport = importDecl.getDefaultImport();
       if (defaultImport) {
-        this.importGraph[filePath].imports.push({
+        this.importGraph[filePath].imports.set(defaultImport.getText(), {
           symbol: defaultImport.getText(),
           source: moduleSpecifier,
         });
@@ -245,7 +245,7 @@ export class WorkspaceAnalyzer {
       // Get namespace import
       const namespaceImport = importDecl.getNamespaceImport();
       if (namespaceImport) {
-        this.importGraph[filePath].imports.push({
+        this.importGraph[filePath].imports.set(namespaceImport.getText(), {
           symbol: namespaceImport.getText(),
           source: moduleSpecifier,
         });
@@ -254,7 +254,7 @@ export class WorkspaceAnalyzer {
       // Get named imports
       const namedImports = importDecl.getNamedImports();
       for (const named of namedImports) {
-        this.importGraph[filePath].imports.push({
+        this.importGraph[filePath].imports.set(named.getName(), {
           symbol: named.getName(),
           source: moduleSpecifier,
         });
@@ -282,12 +282,10 @@ export class WorkspaceAnalyzer {
     const files = new Set<string>();
 
     for (const [filePath, graph] of Object.entries(this.importGraph)) {
-      for (const imp of graph.imports) {
-        if (imp.symbol === symbol) {
-          // Check if this import actually comes from our source file
-          // This requires resolving module paths (simplified check)
-          files.add(filePath);
-        }
+      if (graph.imports.has(symbol)) {
+        // Check if this import actually comes from our source file
+        // This requires resolving module paths (simplified check)
+        files.add(filePath);
       }
     }
 
@@ -318,7 +316,7 @@ export class WorkspaceAnalyzer {
     // For each usage, attempt to find import origin and attach declaration
     for (const usage of usageFiles) {
       // try to find import entry in usage file that imports this symbol
-      const impEntry = this.importGraph[usage]?.imports.find(i => i.symbol === symbol);
+      const impEntry = this.importGraph[usage]?.imports.get(symbol);
       if (impEntry) {
         // attempt to resolve the module source to a workspace file by looking for a declaration with same exported name
         const possibleOrigins = declFiles.length > 0 ? declFiles : [];
