@@ -27,8 +27,6 @@ let analyzerConfig: AnalyzerConfig;
  * Extension activation
  */
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
-  console.log('CodeJanitor extension activated');
-
   // Initialize diagnostic provider
   diagnosticProvider = new CodeJanitorDiagnosticProvider();
   context.subscriptions.push(diagnosticProvider);
