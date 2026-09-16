@@ -28,6 +28,12 @@ let outputChannel: vscode.OutputChannel;
  * Extension activation
  */
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
+  // Initialize output channel
+  outputChannel = vscode.window.createOutputChannel('CodeJanitor');
+  context.subscriptions.push(outputChannel);
+
+  outputChannel.appendLine('[INFO] CodeJanitor extension activated');
+
   // Initialize diagnostic provider
   diagnosticProvider = new CodeJanitorDiagnosticProvider();
   context.subscriptions.push(diagnosticProvider);
@@ -344,4 +350,5 @@ function registerCleanupWithPreviewCommand(context: vscode.ExtensionContext): vo
  */
 export function deactivate(): void {
   diagnosticProvider?.dispose();
+  outputChannel?.appendLine('[INFO] CodeJanitor extension deactivated');
 }
