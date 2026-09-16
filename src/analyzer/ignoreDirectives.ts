@@ -25,6 +25,7 @@ export function parseCodeJanitorDirectives(sourceFile: SourceFile) {
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i] ?? '';
+    if (!line.includes('@codejanitor-ignore')) continue;
     const match = directiveRegex.exec(line);
     if (!match) continue;
 
