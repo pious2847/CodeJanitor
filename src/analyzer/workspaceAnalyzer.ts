@@ -10,12 +10,15 @@
  * This is the orchestration layer for all analyzers.
  */
 
-import { Project, SourceFile, SyntaxKind } from 'ts-morph';
+import { Project, SourceFile } from 'ts-morph';
 import { IAnalyzer } from './base';
 import { CodeIssue, AnalyzerConfig, FileAnalysisResult } from '../models';
 import { UnusedImportsAnalyzer } from './unusedImportsAnalyzer';
 import { UnusedVariablesAnalyzer } from './unusedVariablesAnalyzer';
 import { DeadFunctionsAnalyzer } from './deadFunctionsAnalyzer';
+import { ImportGraphBuilder } from './workspace/importGraphBuilder';
+import { SymbolReferenceCache } from './workspace/symbolReferenceCache';
+
 
 /**
  * Tracks symbol references across the workspace
@@ -35,10 +38,10 @@ interface SymbolReference {
  */
 interface ImportGraph {
   [sourceFile: string]: {
-    imports: {
+    imports: Map<string, {
       symbol: string;
       source: string;
-    }[];
+    }>;
   };
 }
 
@@ -48,15 +51,18 @@ interface ImportGraph {
 export class WorkspaceAnalyzer {
   private project: Project;
   private analyzers: IAnalyzer[];
-  private importGraph: ImportGraph = {};
-  private symbolReferences: Map<string, SymbolReference[]> = new Map();
   private uncommittedFiles: Set<string> = new Set();
+
+  private importGraphBuilder: ImportGraphBuilder;
+  private symbolReferenceCache: SymbolReferenceCache;
 
   // optional git metadata cache: filePath -> { hash, author, date }
   private gitMetadata: Map<string, { hash: string; author: string; date: string }> = new Map();
 
   constructor(project: Project) {
     this.project = project;
+    this.importGraphBuilder = new ImportGraphBuilder();
+    this.symbolReferenceCache = new SymbolReferenceCache(this.importGraphBuilder, this.gitMetadata);
     this.analyzers = [
       new UnusedImportsAnalyzer(),
       new UnusedVariablesAnalyzer(),
@@ -153,7 +159,7 @@ export class WorkspaceAnalyzer {
 
     // First pass: collect all symbols and their references
     for (const sourceFile of sourceFiles) {
-      this.extractSymbolsFromFile(sourceFile);
+      this.symbolReferenceCache.extractFromFile(sourceFile);
     }
 
     // Second pass: build import graph
@@ -224,7 +230,7 @@ export class WorkspaceAnalyzer {
     const imports = sourceFile.getImportDeclarations();
 
     if (!this.importGraph[filePath]) {
-      this.importGraph[filePath] = { imports: [] };
+      this.importGraph[filePath] = { imports: new Map() };
     }
 
     for (const importDecl of imports) {
@@ -236,7 +242,7 @@ export class WorkspaceAnalyzer {
       // Get default import
       const defaultImport = importDecl.getDefaultImport();
       if (defaultImport) {
-        this.importGraph[filePath].imports.push({
+        this.importGraph[filePath].imports.set(defaultImport.getText(), {
           symbol: defaultImport.getText(),
           source: moduleSpecifier,
         });
@@ -245,7 +251,7 @@ export class WorkspaceAnalyzer {
       // Get namespace import
       const namespaceImport = importDecl.getNamespaceImport();
       if (namespaceImport) {
-        this.importGraph[filePath].imports.push({
+        this.importGraph[filePath].imports.set(namespaceImport.getText(), {
           symbol: namespaceImport.getText(),
           source: moduleSpecifier,
         });
@@ -254,11 +260,12 @@ export class WorkspaceAnalyzer {
       // Get named imports
       const namedImports = importDecl.getNamedImports();
       for (const named of namedImports) {
-        this.importGraph[filePath].imports.push({
+        this.importGraph[filePath].imports.set(named.getName(), {
           symbol: named.getName(),
           source: moduleSpecifier,
         });
       }
+      this.importGraphBuilder.buildForFile(sourceFile);
     }
   }
 
@@ -266,32 +273,14 @@ export class WorkspaceAnalyzer {
    * Check if a symbol is referenced in any other file in the workspace
    */
   isSymbolReferencedExternally(symbol: string, sourceFile: SourceFile): boolean {
-    const filePath = sourceFile.getFilePath();
-    const refs = this.symbolReferences.get(symbol) || [];
-
-    // Check if symbol is referenced in any file OTHER than the one it's declared in
-    return refs.some(
-      (ref) => ref.filePath !== filePath && !ref.isDeclaration
-    );
+    return this.symbolReferenceCache.isSymbolReferencedExternally(symbol, sourceFile);
   }
 
   /**
    * Get all files that import a specific exported symbol
    */
   getFilesImportingSymbol(symbol: string): string[] {
-    const files = new Set<string>();
-
-    for (const [filePath, graph] of Object.entries(this.importGraph)) {
-      for (const imp of graph.imports) {
-        if (imp.symbol === symbol) {
-          // Check if this import actually comes from our source file
-          // This requires resolving module paths (simplified check)
-          files.add(filePath);
-        }
-      }
-    }
-
-    return Array.from(files);
+    return this.importGraphBuilder.getFilesImportingSymbol(symbol);
   }
 
   /**
@@ -306,52 +295,6 @@ export class WorkspaceAnalyzer {
    * Returns arrays of file paths representing a chain from declaration -> (imported-from?) -> usage
    */
   getReferenceChains(symbol: string): string[][] {
-    const refs = this.symbolReferences.get(symbol) || [];
-
-    // declaration files (where the symbol is declared/exported)
-    const declFiles = Array.from(new Set(refs.filter(r => r.isDeclaration).map(r => r.filePath)));
-    // usage files (where the symbol appears but not declared)
-    const usageFiles = Array.from(new Set(refs.filter(r => !r.isDeclaration).map(r => r.filePath)));
-
-    const chains: string[][] = [];
-
-    // For each usage, attempt to find import origin and attach declaration
-    for (const usage of usageFiles) {
-      // try to find import entry in usage file that imports this symbol
-      const impEntry = this.importGraph[usage]?.imports.find(i => i.symbol === symbol);
-      if (impEntry) {
-        // attempt to resolve the module source to a workspace file by looking for a declaration with same exported name
-        const possibleOrigins = declFiles.length > 0 ? declFiles : [];
-        if (possibleOrigins.length > 0) {
-          for (const origin of possibleOrigins) {
-            chains.push([origin, usage]);
-          }
-        } else {
-          chains.push([impEntry.source, usage]);
-        }
-      } else {
-        // direct usage in file (maybe same file declaration)
-        if (declFiles.includes(usage)) {
-          chains.push([usage]);
-        } else if (declFiles.length > 0) {
-          for (const d of declFiles) chains.push([d, usage]);
-        } else {
-          chains.push([usage]);
-        }
-      }
-    }
-
-    // If no explicit usages were found but declarations exist, return declarations
-    if (chains.length === 0 && declFiles.length > 0) {
-      for (const d of declFiles) chains.push([d]);
-    }
-
-    // Deduplicate chains
-    const uniq = new Map<string, string[]>();
-    for (const c of chains) {
-      uniq.set(c.join('->'), c);
-    }
-
-    return Array.from(uniq.values());
+    return this.symbolReferenceCache.getReferenceChains(symbol);
   }
 }

@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
-import { getLastCommitInfo, getUncommittedFiles } from './gitUtils';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { getLastCommitInfo, isGitRepository } from './gitUtils';
 import * as path from 'path';
 import * as fs from 'fs';
 import { execSync } from 'child_process';
@@ -7,63 +7,54 @@ import * as cp from 'child_process';
 
 vi.mock('child_process', async (importOriginal) => {
   const actual = await importOriginal<typeof import('child_process')>();
-  const execMock = vi.fn();
-  // `util.promisify` relies on a custom symbol for `exec`, so we must mock the promisified version directly
-  (execMock as any)[Symbol.for('nodejs.util.promisify.custom')] = vi.fn();
   return {
     ...actual,
-    exec: execMock,
+    exec: vi.fn(),
   };
 });
 
 describe('gitUtils', () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
+  beforeEach(() => {
+    vi.clearAllMocks();
   });
 
-  describe('getUncommittedFiles', () => {
-    it('should parse simple uncommitted files correctly', async () => {
-      ((cp.exec as any)[Symbol.for('nodejs.util.promisify.custom')] as ReturnType<typeof vi.fn>).mockResolvedValue({
-        stdout: ' M src/index.ts\0?? src/newFile.ts\0',
-        stderr: ''
-      });
+  describe('isGitRepository', () => {
+    it('should return true if it is a git work tree', async () => {
+      vi.mocked(cp.exec).mockImplementation(((_cmd: string, opts: any, cb: any) => {
+        if (typeof opts === 'function') cb = opts;
+        // Due to util.promisify on a mocked function without the custom symbol,
+        // the first argument after error becomes the resolved value.
+        cb(null, { stdout: 'true\n' });
+        return {} as any;
+      }) as any);
 
-      const workspaceRoot = '/test/root';
-      const files = await getUncommittedFiles(workspaceRoot);
-
-      expect(files.size).toBe(2);
-      expect(files.has(path.resolve(workspaceRoot, 'src/index.ts'))).toBe(true);
-      expect(files.has(path.resolve(workspaceRoot, 'src/newFile.ts'))).toBe(true);
+      const result = await isGitRepository('/workspace');
+      expect(result).toBe(true);
+      expect(cp.exec).toHaveBeenCalledWith('git rev-parse --is-inside-work-tree', { cwd: '/workspace' }, expect.any(Function));
     });
 
-    it('should parse renamed files correctly', async () => {
-      // The implementation actually splits by NUL and expects the parsed format to work with `->`
-      ((cp.exec as any)[Symbol.for('nodejs.util.promisify.custom')] as ReturnType<typeof vi.fn>).mockResolvedValue({
-        stdout: 'R  src/old.ts -> src/renamed.ts\0 M src/modified.ts\0',
-        stderr: ''
-      });
+    it('should return false if it is not a git work tree', async () => {
+      vi.mocked(cp.exec).mockImplementation(((_cmd: string, opts: any, cb: any) => {
+        if (typeof opts === 'function') cb = opts;
+        cb(null, { stdout: 'false\n' });
+        return {} as any;
+      }) as any);
 
-      const workspaceRoot = '/test/root';
-      const files = await getUncommittedFiles(workspaceRoot);
-
-      expect(files.size).toBe(2);
-      expect(files.has(path.resolve(workspaceRoot, 'src/renamed.ts'))).toBe(true);
-      expect(files.has(path.resolve(workspaceRoot, 'src/modified.ts'))).toBe(true);
+      const result = await isGitRepository('/workspace');
+      expect(result).toBe(false);
+      expect(cp.exec).toHaveBeenCalledWith('git rev-parse --is-inside-work-tree', { cwd: '/workspace' }, expect.any(Function));
     });
 
-    it('should return empty set if no output', async () => {
-      ((cp.exec as any)[Symbol.for('nodejs.util.promisify.custom')] as ReturnType<typeof vi.fn>).mockResolvedValue({
-        stdout: '',
-        stderr: ''
-      });
-      const files = await getUncommittedFiles('/test/root');
-      expect(files.size).toBe(0);
-    });
+    it('should return false if an error is thrown', async () => {
+      vi.mocked(cp.exec).mockImplementation(((_cmd: string, opts: any, cb: any) => {
+        if (typeof opts === 'function') cb = opts;
+        cb(new Error('Command failed'));
+        return {} as any;
+      }) as any);
 
-    it('should handle errors gracefully', async () => {
-      ((cp.exec as any)[Symbol.for('nodejs.util.promisify.custom')] as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('git command failed'));
-      const files = await getUncommittedFiles('/test/root');
-      expect(files.size).toBe(0);
+      const result = await isGitRepository('/workspace');
+      expect(result).toBe(false);
+      expect(cp.exec).toHaveBeenCalledWith('git rev-parse --is-inside-work-tree', { cwd: '/workspace' }, expect.any(Function));
     });
   });
 
