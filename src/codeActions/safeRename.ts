@@ -26,7 +26,7 @@ export async function computeSafeRenamePreview(_project: Project, _filePath: str
     const newName = _newName;
 
     const sourceFile = project.getSourceFile(filePath);
-    if (!sourceFile) return { success: false, error: `File not found in project: ${filePath}` };
+    if (!sourceFile) return { success: false, error: 'File not found' };
 
     // Find identifier node at position
     const identifiers = sourceFile.getDescendantsOfKind(SyntaxKind.Identifier);
