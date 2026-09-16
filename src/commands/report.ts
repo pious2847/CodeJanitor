@@ -63,14 +63,11 @@ function buildHtmlReport(report: any) {
   </html>`;
 }
 
-const htmlEscapes: Record<string, string> = {
-  '&': '&amp;',
-  '<': '&lt;',
-  '>': '&gt;',
-  '"': '&quot;',
-  "'": '&#39;'
-};
-
 function escape(s: string) {
-  return String(s).replace(/[&<>"']/g, (match) => htmlEscapes[match] || match);
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
