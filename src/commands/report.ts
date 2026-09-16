@@ -33,7 +33,7 @@ export async function exportReport(workspaceAnalyzer: WorkspaceAnalyzer, config:
   return { jsonPath, htmlPath };
 }
 
-export function buildHtmlReport(report: any) {
+function buildHtmlReport(report: any) {
   const rows = report.results
     .map((r: FileAnalysisResult) => {
       const issuesHtml = r.issues
@@ -63,14 +63,11 @@ export function buildHtmlReport(report: any) {
   </html>`;
 }
 
-const htmlEscapes: Record<string, string> = {
-  '&': '&amp;',
-  '<': '&lt;',
-  '>': '&gt;',
-  '"': '&quot;',
-  "'": '&#39;'
-};
-
-function escape(s: string) {
-  return String(s).replace(/[&<>"']/g, (match) => htmlEscapes[match] || match);
+export function escape(s: string) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
