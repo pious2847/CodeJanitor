@@ -22,13 +22,12 @@ import { AnalyzerConfig } from './models';
 let diagnosticProvider: CodeJanitorDiagnosticProvider;
 let workspaceAnalyzer: WorkspaceAnalyzer | null = null;
 let analyzerConfig: AnalyzerConfig;
+let outputChannel: vscode.OutputChannel;
 
 /**
  * Extension activation
  */
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
-  console.log('CodeJanitor extension activated');
-
   // Initialize diagnostic provider
   diagnosticProvider = new CodeJanitorDiagnosticProvider();
   context.subscriptions.push(diagnosticProvider);
@@ -84,19 +83,19 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 async function initializeWorkspace(): Promise<void> {
   const workspaceFolders = vscode.workspace.workspaceFolders;
   if (!workspaceFolders || workspaceFolders.length === 0) {
-    console.warn('CodeJanitor requires a workspace to be open');
+    outputChannel.appendLine('[WARN] CodeJanitor requires a workspace to be open');
     return;
   }
 
   try {
     const folder = workspaceFolders[0];
     if (!folder) {
-      console.warn('CodeJanitor requires a workspace to be open');
+      outputChannel.appendLine('[WARN] CodeJanitor requires a workspace to be open');
       return;
     }
     
     const workspacePath = folder.uri.fsPath;
-    console.log('CodeJanitor workspace root:', workspacePath);
+    outputChannel.appendLine(`[INFO] CodeJanitor workspace root: ${workspacePath}`);
     
     // Try to create project with tsconfig if it exists, otherwise use workspace root
     try {
@@ -105,10 +104,10 @@ async function initializeWorkspace(): Promise<void> {
         skipAddingFilesFromTsConfig: false,
       });
       workspaceAnalyzer = new WorkspaceAnalyzer(project);
-      console.log('CodeJanitor workspace initialized with tsconfig.json');
+      outputChannel.appendLine('[INFO] CodeJanitor workspace initialized with tsconfig.json');
     } catch (tsError) {
       // Fall back to creating project without tsconfig
-      console.warn('tsconfig.json not found, creating project with workspace root:', tsError);
+      outputChannel.appendLine(`[WARN] tsconfig.json not found, creating project with workspace root: ${tsError}`);
       const project = new Project({
         compilerOptions: {
           target: 99, // Latest
@@ -123,10 +122,10 @@ async function initializeWorkspace(): Promise<void> {
       project.addSourceFilesAtPaths(srcPath);
       
       workspaceAnalyzer = new WorkspaceAnalyzer(project);
-      console.log('CodeJanitor workspace initialized without tsconfig.json');
+      outputChannel.appendLine('[INFO] CodeJanitor workspace initialized without tsconfig.json');
     }
   } catch (error) {
-    console.error('Failed to initialize workspace:', error);
+    outputChannel.appendLine(`[ERROR] Failed to initialize workspace: ${error}`);
   }
 }
 
@@ -191,7 +190,7 @@ function isSupported(document: vscode.TextDocument): boolean {
  */
 async function analyzeDocument(document: vscode.TextDocument): Promise<void> {
   if (!workspaceAnalyzer) {
-    console.warn('Workspace analyzer not initialized');
+    outputChannel.appendLine('[WARN] Workspace analyzer not initialized');
     return;
   }
 
@@ -213,14 +212,14 @@ async function analyzeDocument(document: vscode.TextDocument): Promise<void> {
       diagnosticProvider.updateFileDiagnostics(filePath, result.issues);
       
       if (result.issues.length > 0) {
-        console.log(`CodeJanitor found ${result.issues.length} issues in ${filePath}`);
+        outputChannel.appendLine(`[INFO] CodeJanitor found ${result.issues.length} issues in ${filePath}`);
       }
     } else {
-      console.error(`Analysis failed for ${filePath}: ${result.error}`);
+      outputChannel.appendLine(`[ERROR] Analysis failed for ${filePath}: ${result.error}`);
       diagnosticProvider.clearFileDiagnostics(filePath);
     }
   } catch (error) {
-    console.error('Error analyzing document:', error);
+    outputChannel.appendLine(`[ERROR] Error analyzing document: ${error}`);
   }
 }
 
@@ -345,5 +344,4 @@ function registerCleanupWithPreviewCommand(context: vscode.ExtensionContext): vo
  */
 export function deactivate(): void {
   diagnosticProvider?.dispose();
-  console.log('CodeJanitor extension deactivated');
 }
