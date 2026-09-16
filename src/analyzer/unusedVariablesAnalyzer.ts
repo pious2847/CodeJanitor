@@ -55,39 +55,257 @@ interface VariableAnalysisResult {
 /**
  * Analyzer for detecting unused variables
  */
+export class UnusedVariablesAnalyzer implements IAnalyzer {
+  readonly name = 'unused-variables';
 
-/**
- * Helper class to track and check variable usage across a source file.
- * Uses a cache to avoid repeated AST traversals.
- */
-class VariableUsageChecker {
-  private fileCache = new WeakMap<SourceFile, Map<string, Node[]>>();
+  isEnabled(config: AnalyzerConfig): boolean {
+    return config.enableUnusedVariables;
+  }
 
-  private getCachedIdentifiers(sourceFile: SourceFile, name: string): Node[] {
-    let cache = this.fileCache.get(sourceFile);
-    if (!cache) {
-      cache = new Map<string, Node[]>();
-      const identifiers = sourceFile.getDescendantsOfKind(SyntaxKind.Identifier);
-      for (const id of identifiers) {
-        const text = id.getText();
-        const list = cache.get(text) || [];
-        list.push(id);
-        cache.set(text, list);
-      }
-      this.fileCache.set(sourceFile, cache);
+  private addIssueIfValid(
+    result: VariableAnalysisResult | null,
+    sourceFile: SourceFile,
+    directives: ReturnType<typeof parseCodeJanitorDirectives>,
+    issues: CodeIssue[]
+  ) {
+    if (result && !result.isUsed && !result.isExported) {
+      const issue = this.createIssue(result, sourceFile);
+      if (!issue) return;
+      const loc = issue.locations[0];
+      if (loc && directives.isLineIgnored(loc.startLine, issue.type)) return;
+      issues.push(issue);
     }
-    return cache.get(name) || [];
+  }
+
+  analyzeFile(sourceFile: SourceFile, config: AnalyzerConfig): CodeIssue[] {
+    const issues: CodeIssue[] = [];
+    const directives = parseCodeJanitorDirectives(sourceFile);
+    if (directives.fileIgnored) return [];
+
+    this.analyzeVariableDeclarations(sourceFile, config, directives, issues);
+    this.analyzeFunctionParameters(sourceFile, config, directives, issues);
+    this.analyzeMethodParameters(sourceFile, config, directives, issues);
+    this.analyzeArrowFunctionParameters(sourceFile, config, directives, issues);
+    this.analyzeCatchClauses(sourceFile, config, directives, issues);
+
+    return issues;
+  }
+
+  private analyzeVariableDeclarations(sourceFile: SourceFile, config: AnalyzerConfig, directives: ReturnType<typeof parseCodeJanitorDirectives>, issues: CodeIssue[]) {
+    const variableDeclarations = sourceFile.getVariableDeclarations();
+    for (const varDecl of variableDeclarations) {
+      const results = this.analyzeVariableDeclaration(varDecl, sourceFile, config);
+      for (const result of results) {
+        this.addIssueIfValid(result, sourceFile, directives, issues);
+      }
+    }
+  }
+
+  private analyzeFunctionParameters(sourceFile: SourceFile, config: AnalyzerConfig, directives: ReturnType<typeof parseCodeJanitorDirectives>, issues: CodeIssue[]) {
+    const functions = sourceFile.getFunctions();
+    for (const func of functions) {
+      const params = func.getParameters();
+      for (const param of params) {
+        const result = this.analyzeParameter(param, config);
+        this.addIssueIfValid(result, sourceFile, directives, issues);
+      }
+    }
+  }
+
+  private analyzeMethodParameters(sourceFile: SourceFile, config: AnalyzerConfig, directives: ReturnType<typeof parseCodeJanitorDirectives>, issues: CodeIssue[]) {
+    const classes = sourceFile.getClasses();
+    for (const cls of classes) {
+      for (const method of cls.getMethods()) {
+        const params = method.getParameters();
+        for (const param of params) {
+          const result = this.analyzeParameter(param, config);
+          this.addIssueIfValid(result, sourceFile, directives, issues);
+        }
+      }
+    }
+  }
+
+  private analyzeArrowFunctionParameters(sourceFile: SourceFile, config: AnalyzerConfig, directives: ReturnType<typeof parseCodeJanitorDirectives>, issues: CodeIssue[]) {
+    const arrowFunctions = sourceFile.getDescendantsOfKind(SyntaxKind.ArrowFunction);
+    for (const arrow of arrowFunctions) {
+      const params = arrow.getParameters();
+      for (const param of params) {
+        const result = this.analyzeParameter(param, config);
+        this.addIssueIfValid(result, sourceFile, directives, issues);
+      }
+    }
+  }
+
+  private analyzeCatchClauses(sourceFile: SourceFile, config: AnalyzerConfig, directives: ReturnType<typeof parseCodeJanitorDirectives>, issues: CodeIssue[]) {
+    const catchClauses = sourceFile.getDescendantsOfKind(SyntaxKind.CatchClause);
+    for (const catchClause of catchClauses) {
+      const result = this.analyzeCatchClause(catchClause as CatchClause, config);
+      this.addIssueIfValid(result, sourceFile, directives, issues);
+    }
+  }
+
+  /**
+   * Analyze a variable declaration (handles destructuring)
+   */
+  private analyzeVariableDeclaration(
+    varDecl: VariableDeclaration,
+    sourceFile: SourceFile,
+    config: AnalyzerConfig
+  ): VariableAnalysisResult[] {
+    const results: VariableAnalysisResult[] = [];
+    const nameNode = varDecl.getNameNode();
+
+    // Check if the variable is exported
+    const isExported = this.isVariableExported(varDecl);
+
+    // Handle simple identifier
+    if (Node.isIdentifier(nameNode)) {
+      const name = nameNode.getText();
+      
+      // Check underscore convention
+      if (this.shouldIgnoreByConvention(name, config)) {
+        return results;
+      }
+
+      results.push({
+        name,
+        kind: 'variable',
+        node: varDecl,
+        isUsed: this.isVariableUsed(name, varDecl, sourceFile),
+        isExported,
+      });
+    }
+    // Handle destructuring patterns
+    else if (Node.isArrayBindingPattern(nameNode) || Node.isObjectBindingPattern(nameNode)) {
+      const bindings = nameNode.getElements();
+      for (const binding of bindings) {
+        if (Node.isBindingElement(binding)) {
+          const bindingResults = this.analyzeBindingElement(binding, sourceFile, config, isExported);
+          results.push(...bindingResults);
+        }
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Analyze a binding element from destructuring
+   */
+  private analyzeBindingElement(
+    binding: BindingElement,
+    sourceFile: SourceFile,
+    config: AnalyzerConfig,
+    isExported: boolean
+  ): VariableAnalysisResult[] {
+    const results: VariableAnalysisResult[] = [];
+    const nameNode = binding.getNameNode();
+
+    if (Node.isIdentifier(nameNode)) {
+      const name = nameNode.getText();
+      
+      if (this.shouldIgnoreByConvention(name, config)) {
+        return results;
+      }
+
+      results.push({
+        name,
+        kind: 'destructured',
+        node: binding,
+        isUsed: this.isVariableUsed(name, binding, sourceFile),
+        isExported,
+      });
+    }
+    // Handle nested destructuring
+    else if (Node.isArrayBindingPattern(nameNode) || Node.isObjectBindingPattern(nameNode)) {
+      const nestedBindings = nameNode.getElements();
+      for (const nested of nestedBindings) {
+        if (Node.isBindingElement(nested)) {
+          results.push(...this.analyzeBindingElement(nested, sourceFile, config, isExported));
+        }
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Analyze a function/method parameter
+   */
+  private analyzeParameter(
+    param: ParameterDeclaration,
+    config: AnalyzerConfig
+  ): VariableAnalysisResult | null {
+    const nameNode = param.getNameNode();
+
+    // Handle simple identifier parameter
+    if (Node.isIdentifier(nameNode)) {
+      const name = nameNode.getText();
+
+      // Check underscore convention
+      if (this.shouldIgnoreByConvention(name, config)) {
+        return null;
+      }
+
+      // Check if this is a rest parameter - these are often intentionally unused
+      if (param.isRestParameter()) {
+        return null;
+      }
+
+      return {
+        name,
+        kind: 'parameter',
+        node: param,
+        isUsed: this.isParameterUsed(name, param),
+        isExported: false,
+      };
+    }
+
+    return null;
+  }
+
+  /**
+   * Analyze a catch clause parameter
+   */
+  private analyzeCatchClause(
+    catchClause: CatchClause,
+    config: AnalyzerConfig
+  ): VariableAnalysisResult | null {
+    const variableDecl = catchClause.getVariableDeclaration();
+    if (!variableDecl) {
+      return null;
+    }
+
+    const name = variableDecl.getName();
+
+    // Check underscore convention
+    if (this.shouldIgnoreByConvention(name, config)) {
+      return null;
+    }
+
+    // Get the catch block
+    const block = catchClause.getBlock();
+    const isUsed = this.isIdentifierUsedInScope(name, block, variableDecl);
+
+    return {
+      name,
+      kind: 'catch',
+      node: variableDecl,
+      isUsed,
+      isExported: false,
+    };
   }
 
   /**
    * Check if a variable is used (read) after declaration
    */
-  isVariableUsed(
+  private isVariableUsed(
     name: string,
     declarationNode: Node,
     sourceFile: SourceFile
   ): boolean {
-    const identifiers = this.getCachedIdentifiers(sourceFile, name);
+    const identifiers = sourceFile.getDescendantsOfKind(SyntaxKind.Identifier)
+      .filter((id: Node) => id.getText() === name);
 
     for (const identifier of identifiers) {
       // Skip the declaration itself
@@ -113,10 +331,9 @@ class VariableUsageChecker {
     return false;
   }
 
-  isParameterUsed(
+  private isParameterUsed(
     name: string,
-    param: ParameterDeclaration,
-    sourceFile: SourceFile
+    param: ParameterDeclaration
   ): boolean {
     // Get the function body
     const funcLike = param.getParent();
@@ -136,18 +353,19 @@ class VariableUsageChecker {
       return true; // Assume used if no body (e.g., abstract method)
     }
 
-    return this.isIdentifierUsedInScope(name, body, param, sourceFile);
+    return this.isIdentifierUsedInScope(name, body, param);
   }
 
-  isIdentifierUsedInScope(
+  /**
+   * Check if an identifier is used within a specific scope
+   */
+  private isIdentifierUsedInScope(
     name: string,
     scope: Node,
-    declarationNode: Node,
-    sourceFile: SourceFile
+    declarationNode: Node
   ): boolean {
-    const allIdentifiers = this.getCachedIdentifiers(sourceFile, name);
-    // Filter to only those inside the scope
-    const identifiers = allIdentifiers.filter((id: Node) => this.isSameOrChildOf(id, scope));
+    const identifiers = scope.getDescendantsOfKind(SyntaxKind.Identifier)
+      .filter((id: Node) => id.getText() === name);
 
     for (const identifier of identifiers) {
       if (!this.isSameOrChildOf(identifier, declarationNode)) {
@@ -201,251 +419,6 @@ class VariableUsageChecker {
       return name === identifier;
     }
     return false;
-  }
-}
-
-export class UnusedVariablesAnalyzer implements IAnalyzer {
-  readonly name = 'unused-variables';
-  private usageChecker = new VariableUsageChecker();
-
-  isEnabled(config: AnalyzerConfig): boolean {
-    return config.enableUnusedVariables;
-  }
-
-  private addIssueIfValid(
-    result: VariableAnalysisResult | null,
-    sourceFile: SourceFile,
-    directives: ReturnType<typeof parseCodeJanitorDirectives>,
-    issues: CodeIssue[]
-  ) {
-    if (result && !result.isUsed && !result.isExported) {
-      const issue = this.createIssue(result, sourceFile);
-      if (!issue) return;
-      const loc = issue.locations[0];
-      if (loc && directives.isLineIgnored(loc.startLine, issue.type)) return;
-      issues.push(issue);
-    }
-  }
-
-  analyzeFile(sourceFile: SourceFile, config: AnalyzerConfig): CodeIssue[] {
-    const issues: CodeIssue[] = [];
-    const directives = parseCodeJanitorDirectives(sourceFile);
-    if (directives.fileIgnored) return [];
-
-    this.analyzeVariableDeclarations(sourceFile, config, directives, issues);
-    this.analyzeFunctionParameters(sourceFile, config, directives, issues);
-    this.analyzeMethodParameters(sourceFile, config, directives, issues);
-    this.analyzeArrowFunctionParameters(sourceFile, config, directives, issues);
-    this.analyzeCatchClauses(sourceFile, config, directives, issues);
-
-    return issues;
-  }
-
-  private analyzeVariableDeclarations(sourceFile: SourceFile, config: AnalyzerConfig, directives: ReturnType<typeof parseCodeJanitorDirectives>, issues: CodeIssue[]) {
-    const variableDeclarations = sourceFile.getVariableDeclarations();
-    for (const varDecl of variableDeclarations) {
-      const results = this.analyzeVariableDeclaration(varDecl, sourceFile, config);
-      for (const result of results) {
-        this.addIssueIfValid(result, sourceFile, directives, issues);
-      }
-    }
-  }
-
-  private analyzeFunctionParameters(sourceFile: SourceFile, config: AnalyzerConfig, directives: ReturnType<typeof parseCodeJanitorDirectives>, issues: CodeIssue[]) {
-    const functions = sourceFile.getFunctions();
-    for (const func of functions) {
-      const params = func.getParameters();
-      for (const param of params) {
-        const result = this.analyzeParameter(param, sourceFile, config);
-        this.addIssueIfValid(result, sourceFile, directives, issues);
-      }
-    }
-  }
-
-  private analyzeMethodParameters(sourceFile: SourceFile, config: AnalyzerConfig, directives: ReturnType<typeof parseCodeJanitorDirectives>, issues: CodeIssue[]) {
-    const classes = sourceFile.getClasses();
-    for (const cls of classes) {
-      for (const method of cls.getMethods()) {
-        const params = method.getParameters();
-        for (const param of params) {
-          const result = this.analyzeParameter(param, sourceFile, config);
-          this.addIssueIfValid(result, sourceFile, directives, issues);
-        }
-      }
-    }
-  }
-
-  private analyzeArrowFunctionParameters(sourceFile: SourceFile, config: AnalyzerConfig, directives: ReturnType<typeof parseCodeJanitorDirectives>, issues: CodeIssue[]) {
-    const arrowFunctions = sourceFile.getDescendantsOfKind(SyntaxKind.ArrowFunction);
-    for (const arrow of arrowFunctions) {
-      const params = arrow.getParameters();
-      for (const param of params) {
-        const result = this.analyzeParameter(param, sourceFile, config);
-        this.addIssueIfValid(result, sourceFile, directives, issues);
-      }
-    }
-  }
-
-  private analyzeCatchClauses(sourceFile: SourceFile, config: AnalyzerConfig, directives: ReturnType<typeof parseCodeJanitorDirectives>, issues: CodeIssue[]) {
-    const catchClauses = sourceFile.getDescendantsOfKind(SyntaxKind.CatchClause);
-    for (const catchClause of catchClauses) {
-      const result = this.analyzeCatchClause(catchClause as CatchClause, sourceFile, config);
-      this.addIssueIfValid(result, sourceFile, directives, issues);
-    }
-  }
-
-  /**
-   * Analyze a variable declaration (handles destructuring)
-   */
-  private analyzeVariableDeclaration(
-    varDecl: VariableDeclaration,
-    sourceFile: SourceFile,
-    config: AnalyzerConfig
-  ): VariableAnalysisResult[] {
-    const results: VariableAnalysisResult[] = [];
-    const nameNode = varDecl.getNameNode();
-
-    // Check if the variable is exported
-    const isExported = this.isVariableExported(varDecl);
-
-    // Handle simple identifier
-    if (Node.isIdentifier(nameNode)) {
-      const name = nameNode.getText();
-      
-      // Check underscore convention
-      if (this.shouldIgnoreByConvention(name, config)) {
-        return results;
-      }
-
-      results.push({
-        name,
-        kind: 'variable',
-        node: varDecl,
-        isUsed: this.usageChecker.isVariableUsed(name, varDecl, sourceFile),
-        isExported,
-      });
-    }
-    // Handle destructuring patterns
-    else if (Node.isArrayBindingPattern(nameNode) || Node.isObjectBindingPattern(nameNode)) {
-      const bindings = nameNode.getElements();
-      for (const binding of bindings) {
-        if (Node.isBindingElement(binding)) {
-          const bindingResults = this.analyzeBindingElement(binding, sourceFile, config, isExported);
-          results.push(...bindingResults);
-        }
-      }
-    }
-
-    return results;
-  }
-
-  /**
-   * Analyze a binding element from destructuring
-   */
-  private analyzeBindingElement(
-    binding: BindingElement,
-    sourceFile: SourceFile,
-    config: AnalyzerConfig,
-    isExported: boolean
-  ): VariableAnalysisResult[] {
-    const results: VariableAnalysisResult[] = [];
-    const nameNode = binding.getNameNode();
-
-    if (Node.isIdentifier(nameNode)) {
-      const name = nameNode.getText();
-      
-      if (this.shouldIgnoreByConvention(name, config)) {
-        return results;
-      }
-
-      results.push({
-        name,
-        kind: 'destructured',
-        node: binding,
-        isUsed: this.usageChecker.isVariableUsed(name, binding, sourceFile),
-        isExported,
-      });
-    }
-    // Handle nested destructuring
-    else if (Node.isArrayBindingPattern(nameNode) || Node.isObjectBindingPattern(nameNode)) {
-      const nestedBindings = nameNode.getElements();
-      for (const nested of nestedBindings) {
-        if (Node.isBindingElement(nested)) {
-          results.push(...this.analyzeBindingElement(nested, sourceFile, config, isExported));
-        }
-      }
-    }
-
-    return results;
-  }
-
-  /**
-   * Analyze a function/method parameter
-   */
-  private analyzeParameter(
-    param: ParameterDeclaration,
-    sourceFile: SourceFile,
-    config: AnalyzerConfig
-  ): VariableAnalysisResult | null {
-    const nameNode = param.getNameNode();
-
-    // Handle simple identifier parameter
-    if (Node.isIdentifier(nameNode)) {
-      const name = nameNode.getText();
-
-      // Check underscore convention
-      if (this.shouldIgnoreByConvention(name, config)) {
-        return null;
-      }
-
-      // Check if this is a rest parameter - these are often intentionally unused
-      if (param.isRestParameter()) {
-        return null;
-      }
-
-      return {
-        name,
-        kind: 'parameter',
-        node: param,
-        isUsed: this.usageChecker.isParameterUsed(name, param, sourceFile),
-        isExported: false,
-      };
-    }
-
-    return null;
-  }
-
-  /**
-   * Analyze a catch clause parameter
-   */
-  private analyzeCatchClause(
-    catchClause: CatchClause,
-    sourceFile: SourceFile,
-    config: AnalyzerConfig
-  ): VariableAnalysisResult | null {
-    const variableDecl = catchClause.getVariableDeclaration();
-    if (!variableDecl) {
-      return null;
-    }
-
-    const name = variableDecl.getName();
-
-    // Check underscore convention
-    if (this.shouldIgnoreByConvention(name, config)) {
-      return null;
-    }
-
-    // Get the catch block
-    const block = catchClause.getBlock();
-    const isUsed = this.usageChecker.isIdentifierUsedInScope(name, block, variableDecl, sourceFile);
-
-    return {
-      name,
-      kind: 'catch',
-      node: variableDecl,
-      isUsed,
-      isExported: false,
-    };
   }
 
   /**
