@@ -19,6 +19,32 @@ import { DeadFunctionsAnalyzer } from './deadFunctionsAnalyzer';
 import { ImportGraphBuilder } from './workspace/importGraphBuilder';
 import { SymbolReferenceCache } from './workspace/symbolReferenceCache';
 
+
+/**
+ * Tracks symbol references across the workspace
+ */
+interface SymbolReference {
+  symbol: string;
+  filePath: string;
+  line: number;
+  column: number;
+  isDeclaration: boolean;
+  isExport: boolean;
+  isImport: boolean;
+}
+
+/**
+ * Tracks which symbols are imported where
+ */
+interface ImportGraph {
+  [sourceFile: string]: {
+    imports: Map<string, {
+      symbol: string;
+      source: string;
+    }>;
+  };
+}
+
 /**
  * Orchestrates analysis across the entire workspace
  */
@@ -138,6 +164,107 @@ export class WorkspaceAnalyzer {
 
     // Second pass: build import graph
     for (const sourceFile of sourceFiles) {
+      this.buildImportGraphForFile(sourceFile);
+    }
+  }
+
+  /**
+   * Extract all symbol declarations and references from a file
+   */
+  private extractSymbolsFromFile(sourceFile: SourceFile): void {
+    const filePath = sourceFile.getFilePath();
+
+    // Get exported symbols
+    const exportedDeclarations = sourceFile.getExportedDeclarations();
+    for (const [symbolName] of exportedDeclarations) {
+      if (!this.symbolReferences.has(symbolName)) {
+        this.symbolReferences.set(symbolName, []);
+      }
+
+      const refs = this.symbolReferences.get(symbolName)!;
+      refs.push({
+        symbol: symbolName,
+        filePath,
+        line: 0,
+        column: 0,
+        isDeclaration: true,
+        isExport: true,
+        isImport: false,
+      });
+      // attach git metadata if available
+      const gitInfo = this.gitMetadata.get(filePath);
+      if (gitInfo) {
+        refs.push({ symbol: `__git_meta__${gitInfo.hash}`, filePath, line: 0, column: 0, isDeclaration: false, isExport: false, isImport: false });
+      }
+    }
+
+    // Get all identifier references
+    const identifiers = sourceFile.getDescendantsOfKind(SyntaxKind.Identifier);
+    for (const identifier of identifiers) {
+      const text = identifier.getText();
+      if (!text || text.length === 0) {
+        continue;
+      }
+
+      if (!this.symbolReferences.has(text)) {
+        this.symbolReferences.set(text, []);
+      }
+
+      this.symbolReferences.get(text)!.push({
+        symbol: text,
+        filePath,
+        line: identifier.getStartLineNumber(),
+        column: 0,
+        isDeclaration: false,
+        isExport: false,
+        isImport: false,
+      });
+    }
+  }
+
+  /**
+   * Build import graph for a single file
+   */
+  private buildImportGraphForFile(sourceFile: SourceFile): void {
+    const filePath = sourceFile.getFilePath();
+    const imports = sourceFile.getImportDeclarations();
+
+    if (!this.importGraph[filePath]) {
+      this.importGraph[filePath] = { imports: new Map() };
+    }
+
+    for (const importDecl of imports) {
+      const moduleSpecifier = importDecl.getModuleSpecifierValue();
+      if (!moduleSpecifier) {
+        continue;
+      }
+
+      // Get default import
+      const defaultImport = importDecl.getDefaultImport();
+      if (defaultImport) {
+        this.importGraph[filePath].imports.set(defaultImport.getText(), {
+          symbol: defaultImport.getText(),
+          source: moduleSpecifier,
+        });
+      }
+
+      // Get namespace import
+      const namespaceImport = importDecl.getNamespaceImport();
+      if (namespaceImport) {
+        this.importGraph[filePath].imports.set(namespaceImport.getText(), {
+          symbol: namespaceImport.getText(),
+          source: moduleSpecifier,
+        });
+      }
+
+      // Get named imports
+      const namedImports = importDecl.getNamedImports();
+      for (const named of namedImports) {
+        this.importGraph[filePath].imports.set(named.getName(), {
+          symbol: named.getName(),
+          source: moduleSpecifier,
+        });
+      }
       this.importGraphBuilder.buildForFile(sourceFile);
     }
   }
