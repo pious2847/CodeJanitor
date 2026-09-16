@@ -72,14 +72,14 @@ export class UnusedImportsAnalyzer implements IAnalyzer {
 
     for (const importDecl of imports) {
       // Skip side-effect imports (import 'module')
-      if (isSideEffectImport(importDecl)) {
+      if (this.isSideEffectImport(importDecl)) {
         continue;
       }
 
-      const unusedImports = analyzeImportDeclaration(importDecl, sourceFile, identifierMap);
+      const unusedImports = this.analyzeImportDeclaration(importDecl, sourceFile, identifierMap);
       
       for (const unused of unusedImports) {
-        const issue = createIssue(unused, sourceFile, importDecl);
+        const issue = this.createIssue(unused, sourceFile, importDecl);
         if (!issue) continue;
         const loc = issue.locations[0];
         if (loc && directives.isLineIgnored(loc.startLine, issue.type)) continue;
@@ -89,179 +89,179 @@ export class UnusedImportsAnalyzer implements IAnalyzer {
 
     return issues;
   }
-}
 
-/**
- * Check if this is a side-effect import (import 'module')
- * Side-effect imports are never flagged as unused
- */
-function isSideEffectImport(importDecl: ImportDeclaration): boolean {
-  const defaultImport = importDecl.getDefaultImport();
-  const namespaceImport = importDecl.getNamespaceImport();
-  const namedImports = importDecl.getNamedImports();
+  /**
+   * Check if this is a side-effect import (import 'module')
+   * Side-effect imports are never flagged as unused
+   */
+  private isSideEffectImport(importDecl: ImportDeclaration): boolean {
+    const defaultImport = importDecl.getDefaultImport();
+    const namespaceImport = importDecl.getNamespaceImport();
+    const namedImports = importDecl.getNamedImports();
 
-  return !defaultImport && !namespaceImport && namedImports.length === 0;
-}
-
-/**
- * Analyze a single import declaration for unused imports
- */
-function analyzeImportDeclaration(
-  importDecl: ImportDeclaration,
-  sourceFile: SourceFile,
-  identifierMap: Map<string, Node[]>
-): ImportAnalysisResult[] {
-  const unused: ImportAnalysisResult[] = [];
-  const isTypeOnlyImport = importDecl.isTypeOnly();
-
-  // Check default import
-  const defaultImport = importDecl.getDefaultImport();
-  if (defaultImport) {
-    const name = defaultImport.getText();
-    if (!isIdentifierUsed(name, sourceFile, defaultImport, identifierMap)) {
-      unused.push({
-        name,
-        isUsed: false,
-        node: defaultImport,
-        isTypeOnly: isTypeOnlyImport,
-      });
-    }
+    return !defaultImport && !namespaceImport && namedImports.length === 0;
   }
 
-  // Check namespace import (import * as foo)
-  const namespaceImport = importDecl.getNamespaceImport();
-  if (namespaceImport) {
-    const name = namespaceImport.getText();
-    if (!isIdentifierUsed(name, sourceFile, namespaceImport, identifierMap)) {
-      unused.push({
-        name,
-        isUsed: false,
-        node: namespaceImport,
-        isTypeOnly: isTypeOnlyImport,
-      });
-    }
-  }
+  /**
+   * Analyze a single import declaration for unused imports
+   */
+  private analyzeImportDeclaration(
+    importDecl: ImportDeclaration,
+    sourceFile: SourceFile,
+    identifierMap: Map<string, Node[]>
+  ): ImportAnalysisResult[] {
+    const unused: ImportAnalysisResult[] = [];
+    const isTypeOnlyImport = importDecl.isTypeOnly();
 
-  // Check named imports
-  const namedImports = importDecl.getNamedImports();
-  for (const namedImport of namedImports) {
-    const result = analyzeNamedImport(namedImport, sourceFile, isTypeOnlyImport, identifierMap);
-    if (!result.isUsed) {
-      unused.push(result);
-    }
-  }
-
-  return unused;
-}
-
-/**
- * Analyze a single named import specifier
- */
-function analyzeNamedImport(
-  namedImport: ImportSpecifier,
-  sourceFile: SourceFile,
-  parentIsTypeOnly: boolean,
-  identifierMap: Map<string, Node[]>
-): ImportAnalysisResult {
-  // Handle aliased imports: import { foo as bar }
-  const alias = namedImport.getAliasNode();
-  const localName = alias ? alias.getText() : namedImport.getName();
-  const isTypeOnly = parentIsTypeOnly || namedImport.isTypeOnly();
-
-  return {
-    name: localName,
-    isUsed: isIdentifierUsed(localName, sourceFile, namedImport, identifierMap),
-    node: namedImport,
-    isTypeOnly,
-  };
-}
-
-/**
- * Check if an identifier is used anywhere in the file (excluding the import itself)
- *
- * This uses ts-morph's findReferencesAsNodes which properly handles:
- * - Variable references
- * - Type references
- * - JSX element references
- * - Property access
- */
-function isIdentifierUsed(
-  name: string,
-  _sourceFile: SourceFile,
-  _importNode: Node,
-  identifierMap: Map<string, Node[]>
-): boolean {
-  // Get all identifiers in the file with this name
-  const identifiers = identifierMap.get(name) || [];
-
-  // Filter out the import declaration itself
-  for (const identifier of identifiers) {
-    // Skip if this is the import node itself
-    if (isPartOfImport(identifier)) {
-      continue;
+    // Check default import
+    const defaultImport = importDecl.getDefaultImport();
+    if (defaultImport) {
+      const name = defaultImport.getText();
+      if (!this.isIdentifierUsed(name, sourceFile, defaultImport, identifierMap)) {
+        unused.push({
+          name,
+          isUsed: false,
+          node: defaultImport,
+          isTypeOnly: isTypeOnlyImport,
+        });
+      }
     }
 
-    // Found a usage outside of imports
-    return true;
+    // Check namespace import (import * as foo)
+    const namespaceImport = importDecl.getNamespaceImport();
+    if (namespaceImport) {
+      const name = namespaceImport.getText();
+      if (!this.isIdentifierUsed(name, sourceFile, namespaceImport, identifierMap)) {
+        unused.push({
+          name,
+          isUsed: false,
+          node: namespaceImport,
+          isTypeOnly: isTypeOnlyImport,
+        });
+      }
+    }
+
+    // Check named imports
+    const namedImports = importDecl.getNamedImports();
+    for (const namedImport of namedImports) {
+      const result = this.analyzeNamedImport(namedImport, sourceFile, isTypeOnlyImport, identifierMap);
+      if (!result.isUsed) {
+        unused.push(result);
+      }
+    }
+
+    return unused;
   }
 
-  return false;
-}
+  /**
+   * Analyze a single named import specifier
+   */
+  private analyzeNamedImport(
+    namedImport: ImportSpecifier,
+    sourceFile: SourceFile,
+    parentIsTypeOnly: boolean,
+    identifierMap: Map<string, Node[]>
+  ): ImportAnalysisResult {
+    // Handle aliased imports: import { foo as bar }
+    const alias = namedImport.getAliasNode();
+    const localName = alias ? alias.getText() : namedImport.getName();
+    const isTypeOnly = parentIsTypeOnly || namedImport.isTypeOnly();
 
-/**
- * Check if a node is part of an import declaration
- */
-function isPartOfImport(node: Node): boolean {
-  let current: Node | undefined = node;
-  while (current) {
-    if (Node.isImportDeclaration(current) ||
-        Node.isImportSpecifier(current) ||
-        Node.isImportClause(current)) {
+    return {
+      name: localName,
+      isUsed: this.isIdentifierUsed(localName, sourceFile, namedImport, identifierMap),
+      node: namedImport,
+      isTypeOnly,
+    };
+  }
+
+  /**
+   * Check if an identifier is used anywhere in the file (excluding the import itself)
+   *
+   * This uses ts-morph's findReferencesAsNodes which properly handles:
+   * - Variable references
+   * - Type references
+   * - JSX element references
+   * - Property access
+   */
+  private isIdentifierUsed(
+    name: string,
+    _sourceFile: SourceFile,
+    _importNode: Node,
+    identifierMap: Map<string, Node[]>
+  ): boolean {
+    // Get all identifiers in the file with this name
+    const identifiers = identifierMap.get(name) || [];
+
+    // Filter out the import declaration itself
+    for (const identifier of identifiers) {
+      // Skip if this is the import node itself
+      if (this.isPartOfImport(identifier)) {
+        continue;
+      }
+
+      // Found a usage outside of imports
       return true;
     }
-    current = current.getParent();
+
+    return false;
   }
-  return false;
-}
 
-/**
- * Create a CodeIssue for an unused import
- */
-function createIssue(
-  unused: ImportAnalysisResult,
-  sourceFile: SourceFile,
-  importDecl: ImportDeclaration
-): CodeIssue {
-  const startLine = unused.node.getStartLineNumber();
-  const endLine = unused.node.getEndLineNumber();
-  const startCol = Math.max(1, unused.node.getStart());
-  const endCol = Math.max(1, unused.node.getEnd());
+  /**
+   * Check if a node is part of an import declaration
+   */
+  private isPartOfImport(node: Node): boolean {
+    let current: Node | undefined = node;
+    while (current) {
+      if (Node.isImportDeclaration(current) ||
+          Node.isImportSpecifier(current) ||
+          Node.isImportClause(current)) {
+        return true;
+      }
+      current = current.getParent();
+    }
+    return false;
+  }
 
-  const location: SourceLocation = {
-    filePath: sourceFile.getFilePath(),
-    startLine,
-    startColumn: startCol,
-    endLine,
-    endColumn: endCol,
-    sourceText: unused.node.getText(),
-  };
+  /**
+   * Create a CodeIssue for an unused import
+   */
+  private createIssue(
+    unused: ImportAnalysisResult,
+    sourceFile: SourceFile,
+    importDecl: ImportDeclaration
+  ): CodeIssue {
+    const startLine = unused.node.getStartLineNumber();
+    const endLine = unused.node.getEndLineNumber();
+    const startCol = Math.max(1, unused.node.getStart());
+    const endCol = Math.max(1, unused.node.getEnd());
 
-  const moduleSpecifier = importDecl.getModuleSpecifierValue();
-  const typeOnlyPrefix = unused.isTypeOnly ? 'type-only ' : '';
+    const location: SourceLocation = {
+      filePath: sourceFile.getFilePath(),
+      startLine,
+      startColumn: startCol,
+      endLine,
+      endColumn: endCol,
+      sourceText: unused.node.getText(),
+    };
 
-  return {
-    id: generateIssueId('unused-import', sourceFile.getFilePath(), unused.name, startLine),
-    type: 'unused-import',
-    certainty: 'high' as Certainty,
-    reason: `${typeOnlyPrefix}Import '${unused.name}' from '${moduleSpecifier}' is declared but never used`,
-    locations: [location],
-    safeFixAvailable: true,
-    symbolName: unused.name,
-    explanation: `The identifier '${unused.name}' is imported but not referenced anywhere in this file. ` +
-      `This import can be safely removed without affecting the code's behavior.`,
-    suggestedFix: `Remove unused import '${unused.name}'`,
-    tags: unused.isTypeOnly ? ['type-only'] : [],
-  };
+    const moduleSpecifier = importDecl.getModuleSpecifierValue();
+    const typeOnlyPrefix = unused.isTypeOnly ? 'type-only ' : '';
+
+    return {
+      id: generateIssueId('unused-import', sourceFile.getFilePath(), unused.name, startLine),
+      type: 'unused-import',
+      certainty: 'high' as Certainty,
+      reason: `${typeOnlyPrefix}Import '${unused.name}' from '${moduleSpecifier}' is declared but never used`,
+      locations: [location],
+      safeFixAvailable: true,
+      symbolName: unused.name,
+      explanation: `The identifier '${unused.name}' is imported but not referenced anywhere in this file. ` +
+        `This import can be safely removed without affecting the code's behavior.`,
+      suggestedFix: `Remove unused import '${unused.name}'`,
+      tags: unused.isTypeOnly ? ['type-only'] : [],
+    };
+  }
 }
 
 /**
