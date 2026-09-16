@@ -18,28 +18,22 @@
 import {
   SourceFile,
   ExportedDeclarations,
-  FunctionDeclaration,
-  ClassDeclaration,
-  InterfaceDeclaration,
-  TypeAliasDeclaration,
-  VariableDeclaration,
 } from 'ts-morph';
 import { IAnalyzer } from './base';
 import {
   CodeIssue,
   AnalyzerConfig,
-  SourceLocation,
   Certainty,
   generateIssueId,
 } from '../models';
 import { parseCodeJanitorDirectives } from './ignoreDirectives';
+import { createSourceLocation, getExportKindName } from '../utils/astHelpers';
 
 /**
  * Entry point patterns that should not be flagged
  */
 const ENTRY_POINT_PATTERNS: RegExp[] = [
-  /^(index|main|lib|types)\.tsx?$/,
-  /^[^/]*\/index\.tsx?$/, // Any index.ts file
+  /(?:^|\/)(index|main|lib|types)\.tsx?$/, // Any index.ts, main.ts, lib.ts, types.ts
 ];
 
 /**
@@ -121,25 +115,11 @@ export class DeadExportsAnalyzer implements IAnalyzer {
       return null;
     }
 
-    const startLine = node.getStartLineNumber?.() || 1;
-    const endLine = node.getEndLineNumber?.() || 1;
-    // Simple column calculation - ts-morph doesn't have getLineStarts
-    const startCol = 1;
-    const endCol = 1;
-
-    const location: SourceLocation = {
-      filePath: sourceFile.getFilePath(),
-      startLine,
-      startColumn: startCol,
-      endLine,
-      endColumn: endCol,
-      sourceText: node.getText?.() || symbolName,
-    };
-
-    const kindName = this.getExportKindName(node);
+    const location = createSourceLocation(node, sourceFile, node.getText?.() || symbolName);
+    const kindName = getExportKindName(node);
 
     return {
-      id: generateIssueId('dead-export', sourceFile.getFilePath(), symbolName, startLine),
+      id: generateIssueId('dead-export', sourceFile.getFilePath(), symbolName, location.startLine),
       type: 'dead-export',
       certainty: 'medium' as Certainty,
       reason: `Exported ${kindName} '${symbolName}' is never imported or used anywhere in the workspace`,
@@ -153,24 +133,6 @@ export class DeadExportsAnalyzer implements IAnalyzer {
       suggestedFix: `Review if '${symbolName}' is part of the public API. If not, consider removing the export.`,
       tags: ['export', 'requires-review'],
     };
-  }
-
-  /**
-   * Get the kind of export (function, class, interface, etc.)
-   */
-  private getExportKindName(node: ExportedDeclarations): string {
-    if (node instanceof FunctionDeclaration) {
-      return 'function';
-    } else if (node instanceof ClassDeclaration) {
-      return 'class';
-    } else if (node instanceof InterfaceDeclaration) {
-      return 'interface';
-    } else if (node instanceof TypeAliasDeclaration) {
-      return 'type';
-    } else if (node instanceof VariableDeclaration) {
-      return 'variable';
-    }
-    return 'symbol';
   }
 }
 

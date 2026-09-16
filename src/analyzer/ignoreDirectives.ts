@@ -25,6 +25,7 @@ export function parseCodeJanitorDirectives(sourceFile: SourceFile) {
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i] ?? '';
+    if (!line.includes('@codejanitor-ignore')) continue;
     const match = directiveRegex.exec(line);
     if (!match) continue;
 
@@ -52,10 +53,10 @@ export function parseCodeJanitorDirectives(sourceFile: SourceFile) {
     fileIgnored,
     isLineIgnored(line: number, issueType?: string) {
       if (fileIgnored) return true;
+      if (!ignoredLines.has(line)) return false;
       const set = ignoredLines.get(line);
-      if (!set) return false;
       if (!issueType || set === null) return true;
-      return set.has(issueType);
+      return set!.has(issueType);
     },
   };
 }

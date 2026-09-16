@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import DOMPurify from 'isomorphic-dompurify';
 
 /**
  * PreviewPanel
@@ -42,12 +43,21 @@ export class PreviewPanel {
     return PreviewPanel.currentPanel;
   }
 
+  private static escapeHtml(s: string): string {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   public setContent(diffs: { [filePath: string]: string }) {
     const webview = this.panel.webview;
     const escaped = Object.entries(diffs).map(([fp, html]) => `
       <div class="file">
-        <label><input type="checkbox" checked data-file="${fp}"> ${fp}</label>
-        <pre class="diff">${html}</pre>
+        <label><input type="checkbox" checked data-file="${PreviewPanel.escapeHtml(fp)}"> ${PreviewPanel.escapeHtml(fp)}</label>
+        <pre class="diff">${DOMPurify.sanitize(html)}</pre>
       </div>
     `).join('\n');
 

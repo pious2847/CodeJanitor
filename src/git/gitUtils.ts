@@ -1,8 +1,9 @@
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import * as path from 'path';
 
 const execP = promisify(exec);
+const execFileP = promisify(execFile);
 
 export async function isGitRepository(workspaceRoot: string): Promise<boolean> {
   try {
@@ -41,8 +42,7 @@ export async function getUncommittedFiles(workspaceRoot: string): Promise<Set<st
 export async function getLastCommitInfo(workspaceRoot: string, filePath: string): Promise<{ hash: string; author: string; date: string } | null> {
   try {
     const relPath = path.relative(workspaceRoot, filePath);
-    const cmd = `git log -1 --format=%H::%an::%aI -- "${relPath.replace(/"/g, '\\"')}"`;
-    const { stdout } = await execP(cmd, { cwd: workspaceRoot });
+    const { stdout } = await execFileP('git', ['log', '-1', '--format=%H::%an::%aI', '--', relPath], { cwd: workspaceRoot });
     const out = stdout.trim();
     if (!out) return null;
     const parts = out.split('::');

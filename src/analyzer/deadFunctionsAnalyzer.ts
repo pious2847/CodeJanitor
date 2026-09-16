@@ -26,6 +26,7 @@ import {
   Node,
   SyntaxKind,
   ClassDeclaration,
+  PropertyAccessExpression,
 } from 'ts-morph';
 import { IAnalyzer } from './base';
 import {
@@ -70,16 +71,153 @@ const ENTRY_POINT_PATTERNS: RegExp[] = [
  */
 export type ExternalReferenceChecker = (symbol: string, sourceFile: SourceFile) => boolean;
 
+class ReferenceIndex {
+  /**
+   * Cache to store identifiers and property accesses per file for faster lookup
+   */
+  private fileCache = new WeakMap<SourceFile, {
+    identifiers: Map<string, Node[]>;
+    propertyAccesses: Map<string, PropertyAccessExpression[]>;
+  }>();
+
+  private getFileCache(sourceFile: SourceFile) {
+    if (!this.fileCache.has(sourceFile)) {
+      const identifiers = new Map<string, Node[]>();
+      for (const id of sourceFile.getDescendantsOfKind(SyntaxKind.Identifier)) {
+        const text = id.getText();
+        const list = identifiers.get(text) || [];
+        list.push(id);
+        identifiers.set(text, list);
+      }
+
+      const propertyAccesses = new Map<string, PropertyAccessExpression[]>();
+      for (const access of sourceFile.getDescendantsOfKind(SyntaxKind.PropertyAccessExpression)) {
+        const name = access.getName();
+        const list = propertyAccesses.get(name) || [];
+        list.push(access);
+        propertyAccesses.set(name, list);
+      }
+
+      this.fileCache.set(sourceFile, { identifiers, propertyAccesses });
+    }
+    return this.fileCache.get(sourceFile)!;
+  }
+
+  /**
+   * Check if a function is referenced anywhere in the file
+   */
+  isFunctionReferenced(
+    name: string,
+    funcDecl: FunctionDeclaration,
+    sourceFile: SourceFile
+  ): boolean {
+    const cache = this.getFileCache(sourceFile);
+    const identifiers = cache.identifiers.get(name) || [];
+
+    for (const identifier of identifiers) {
+      // Skip the function declaration name itself
+      if (this.isPartOfFunctionDeclaration(identifier, funcDecl)) {
+        continue;
+      }
+
+      // Found a reference
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Check if a method is referenced (called) anywhere
+   */
+  isMethodReferenced(
+    name: string,
+    _method: MethodDeclaration,
+    sourceFile: SourceFile
+  ): boolean {
+    const cache = this.getFileCache(sourceFile);
+    const propertyAccesses = cache.propertyAccesses.get(name) || [];
+
+    for (const access of propertyAccesses) {
+      // Check if this is a call expression (method is being called)
+      const parent = access.getParent();
+      if (Node.isCallExpression(parent)) {
+        return true;
+      }
+      // Also count references (passing method as callback)
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Check if a static method is referenced
+   */
+  isStaticMethodReferenced(
+    name: string,
+    cls: ClassDeclaration,
+    sourceFile: SourceFile
+  ): boolean {
+    const className = cls.getName();
+    if (!className) {
+      return true; // Assume used if anonymous class
+    }
+
+    const cache = this.getFileCache(sourceFile);
+    const propertyAccesses = cache.propertyAccesses.get(name) || [];
+
+    for (const access of propertyAccesses) {
+      const expression = access.getExpression();
+
+      if (Node.isIdentifier(expression) && expression.getText() === className) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * Check if identifier is part of the function declaration itself
+   */
+  private isPartOfFunctionDeclaration(identifier: Node, funcDecl: FunctionDeclaration): boolean {
+    let current: Node | undefined = identifier;
+    while (current) {
+      if (current === funcDecl) {
+        // Check if this identifier is the function name
+        const nameNode = funcDecl.getNameNode();
+        if (nameNode && this.isSameNode(identifier, nameNode)) {
+          return true;
+        }
+        // If inside the function but not the name, it's a recursive call
+        return false;
+      }
+      current = current.getParent();
+    }
+    return false;
+  }
+
+  /**
+   * Check if two nodes are the same
+   */
+  private isSameNode(a: Node, b: Node): boolean {
+    return a.getStart() === b.getStart() && a.getEnd() === b.getEnd();
+  }
+}
+
 /**
  * Analyzer for detecting dead (unreferenced) functions
  */
 export class DeadFunctionsAnalyzer implements IAnalyzer {
   readonly name = 'dead-functions';
-  
+
   /**
    * Optional workspace context for more accurate analysis
    */
   private externalReferenceChecker: ExternalReferenceChecker | null = null;
+
+  private referenceIndex = new ReferenceIndex();
 
   isEnabled(config: AnalyzerConfig): boolean {
     return config.enableDeadFunctions;
@@ -161,7 +299,7 @@ export class DeadFunctionsAnalyzer implements IAnalyzer {
     }
 
     // Check if the function is referenced anywhere
-    const isReferenced = this.isFunctionReferenced(name, func, sourceFile);
+    const isReferenced = this.referenceIndex.isFunctionReferenced(name, func, sourceFile);
     
     if (!isReferenced) {
       return this.createIssue(func, name, sourceFile, 'function');
@@ -234,7 +372,7 @@ export class DeadFunctionsAnalyzer implements IAnalyzer {
     // Skip static methods (may be called without instance)
     if (method.isStatic()) {
       // Still check if it's referenced
-      const isReferenced = this.isStaticMethodReferenced(name, cls, sourceFile);
+      const isReferenced = this.referenceIndex.isStaticMethodReferenced(name, cls, sourceFile);
       if (!isReferenced) {
         return this.createIssue(method, name, sourceFile, 'method');
       }
@@ -242,119 +380,13 @@ export class DeadFunctionsAnalyzer implements IAnalyzer {
     }
 
     // Check if the method is called anywhere
-    const isReferenced = this.isMethodReferenced(name, method, sourceFile);
+    const isReferenced = this.referenceIndex.isMethodReferenced(name, method, sourceFile);
     
     if (!isReferenced) {
       return this.createIssue(method, name, sourceFile, 'method');
     }
 
     return null;
-  }
-
-  /**
-   * Check if a function is referenced anywhere in the file
-   */
-  private isFunctionReferenced(
-    name: string,
-    funcDecl: FunctionDeclaration,
-    sourceFile: SourceFile
-  ): boolean {
-    const identifiers = sourceFile.getDescendantsOfKind(SyntaxKind.Identifier)
-      .filter((id: Node) => id.getText() === name);
-
-    for (const identifier of identifiers) {
-      // Skip the function declaration name itself
-      if (this.isPartOfFunctionDeclaration(identifier, funcDecl)) {
-        continue;
-      }
-
-      // Found a reference
-      return true;
-    }
-
-    return false;
-  }
-
-  /**
-   * Check if a method is referenced (called) anywhere
-   */
-  private isMethodReferenced(
-    name: string,
-    _method: MethodDeclaration,
-    sourceFile: SourceFile
-  ): boolean {
-    // Look for property access expressions like `this.methodName` or `obj.methodName`
-    const propertyAccesses = sourceFile.getDescendantsOfKind(SyntaxKind.PropertyAccessExpression);
-    
-    for (const access of propertyAccesses) {
-      const propName = access.getName();
-      if (propName === name) {
-        // Check if this is a call expression (method is being called)
-        const parent = access.getParent();
-        if (Node.isCallExpression(parent)) {
-          return true;
-        }
-        // Also count references (passing method as callback)
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  /**
-   * Check if a static method is referenced
-   */
-  private isStaticMethodReferenced(
-    name: string,
-    cls: ClassDeclaration,
-    sourceFile: SourceFile
-  ): boolean {
-    const className = cls.getName();
-    if (!className) {
-      return true; // Assume used if anonymous class
-    }
-
-    // Look for ClassName.methodName patterns
-    const propertyAccesses = sourceFile.getDescendantsOfKind(SyntaxKind.PropertyAccessExpression);
-    
-    for (const access of propertyAccesses) {
-      const expression = access.getExpression();
-      const propName = access.getName();
-      
-      if (propName === name && Node.isIdentifier(expression) && expression.getText() === className) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  /**
-   * Check if identifier is part of the function declaration itself
-   */
-  private isPartOfFunctionDeclaration(identifier: Node, funcDecl: FunctionDeclaration): boolean {
-    let current: Node | undefined = identifier;
-    while (current) {
-      if (current === funcDecl) {
-        // Check if this identifier is the function name
-        const nameNode = funcDecl.getNameNode();
-        if (nameNode && this.isSameNode(identifier, nameNode)) {
-          return true;
-        }
-        // If inside the function but not the name, it's a recursive call
-        return false;
-      }
-      current = current.getParent();
-    }
-    return false;
-  }
-
-  /**
-   * Check if two nodes are the same
-   */
-  private isSameNode(a: Node, b: Node): boolean {
-    return a.getStart() === b.getStart() && a.getEnd() === b.getEnd();
   }
 
   /**
