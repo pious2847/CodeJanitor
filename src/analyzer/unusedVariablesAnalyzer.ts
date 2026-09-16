@@ -244,7 +244,7 @@ export class UnusedVariablesAnalyzer implements IAnalyzer {
   private analyzeVariableDeclarations(sourceFile: SourceFile, config: AnalyzerConfig, directives: ReturnType<typeof parseCodeJanitorDirectives>, issues: CodeIssue[]) {
     const variableDeclarations = sourceFile.getVariableDeclarations();
     for (const varDecl of variableDeclarations) {
-      const results = this.analyzeVariableDeclaration(varDecl, sourceFile, config);
+      const results = this.analyzeVariableDeclaration(varDecl, sourceFile, config, identifierCache);
       for (const result of results) {
         this.addIssueIfValid(result, sourceFile, directives, issues);
       }
@@ -300,7 +300,8 @@ export class UnusedVariablesAnalyzer implements IAnalyzer {
   private analyzeVariableDeclaration(
     varDecl: VariableDeclaration,
     sourceFile: SourceFile,
-    config: AnalyzerConfig
+    config: AnalyzerConfig,
+    identifierCache: Map<string, Node[]>
   ): VariableAnalysisResult[] {
     const results: VariableAnalysisResult[] = [];
     const nameNode = varDecl.getNameNode();
@@ -330,7 +331,7 @@ export class UnusedVariablesAnalyzer implements IAnalyzer {
       const bindings = nameNode.getElements();
       for (const binding of bindings) {
         if (Node.isBindingElement(binding)) {
-          const bindingResults = this.analyzeBindingElement(binding, sourceFile, config, isExported);
+          const bindingResults = this.analyzeBindingElement(binding, sourceFile, config, isExported, identifierCache);
           results.push(...bindingResults);
         }
       }
@@ -346,7 +347,8 @@ export class UnusedVariablesAnalyzer implements IAnalyzer {
     binding: BindingElement,
     sourceFile: SourceFile,
     config: AnalyzerConfig,
-    isExported: boolean
+    isExported: boolean,
+    identifierCache: Map<string, Node[]>
   ): VariableAnalysisResult[] {
     const results: VariableAnalysisResult[] = [];
     const nameNode = binding.getNameNode();
@@ -371,7 +373,7 @@ export class UnusedVariablesAnalyzer implements IAnalyzer {
       const nestedBindings = nameNode.getElements();
       for (const nested of nestedBindings) {
         if (Node.isBindingElement(nested)) {
-          results.push(...this.analyzeBindingElement(nested, sourceFile, config, isExported));
+          results.push(...this.analyzeBindingElement(nested, sourceFile, config, isExported, identifierCache));
         }
       }
     }
