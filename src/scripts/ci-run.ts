@@ -23,8 +23,7 @@ async function main() {
       respectUnderscoreConvention: true,
     };
 
-    const { jsonPath, htmlPath } = await exportReport(analyzer, config, workspaceRoot);
-    console.log('Report written:', jsonPath, htmlPath);
+    await exportReport(analyzer, config, workspaceRoot);
   } catch (err) {
     console.error('CI run failed:', err);
     process.exitCode = 2;

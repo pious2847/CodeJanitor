@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import DOMPurify from 'isomorphic-dompurify';
 
 /**
  * PreviewPanel
@@ -56,7 +57,7 @@ export class PreviewPanel {
     const escaped = Object.entries(diffs).map(([fp, html]) => `
       <div class="file">
         <label><input type="checkbox" checked data-file="${PreviewPanel.escapeHtml(fp)}"> ${PreviewPanel.escapeHtml(fp)}</label>
-        <pre class="diff">${html}</pre>
+        <pre class="diff">${DOMPurify.sanitize(html)}</pre>
       </div>
     `).join('\n');
 
