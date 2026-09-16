@@ -345,5 +345,4 @@ function registerCleanupWithPreviewCommand(context: vscode.ExtensionContext): vo
  */
 export function deactivate(): void {
   diagnosticProvider?.dispose();
-  console.log('CodeJanitor extension deactivated');
 }
